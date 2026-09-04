@@ -68,11 +68,19 @@ check_status() {
     info "Status Server"
 
     # Node server
-    if pgrep -f "node server" > /dev/null; then
-        local PID=$(pgrep -f "node server" | head -1)
-        local PORT=$(ss -tlnp 2>/dev/null | grep "$PID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
+    if pgrep -f "server.js" > /dev/null; then
+        local PID=$(pgrep -f "server.js" | head -1)
+        # ss tidak ada di Termux, coba lsof atau netstat
+        local PORT
+        if command -v ss &>/dev/null; then
+            PORT=$(ss -tlnp 2>/dev/null | grep "$PID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
+        elif command -v netstat &>/dev/null; then
+            PORT=$(netstat -tlnp 2>/dev/null | grep "$PID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
+        else
+            PORT="?"
+        fi
         local UPTIME=$(ps -o etime= -p "$PID" 2>/dev/null | xargs || echo "?")
-        echo "  ${GREEN}[ONLINE]${NC}  Node.js server - PID $PID, Port $PORT, Uptime: $UPTIME"
+        echo "  ${GREEN}[ONLINE]${NC}  Node.js server - PID $PID, Port ${PORT:-?}, Uptime: $UPTIME"
     else
         echo "  ${RED}[OFFLINE]${NC}  Node.js server tidak jalan"
     fi
@@ -80,7 +88,7 @@ check_status() {
     # Tunnel
     if pgrep -f "cloudflared" > /dev/null; then
         local TUNNEL_PID=$(pgrep -f "cloudflared" | head -1)
-        local TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.(trycloudflare\.com|cloudflare\.com)' /tmp/amprem-tunnel.log 2>/dev/null | tail -1 || echo "?")
+        local TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' /tmp/amprem-tunnel.log 2>/dev/null | tail -1 || echo "?")
         echo "  ${GREEN}[ONLINE]${NC}  Cloudflare Tunnel - PID $TUNNEL_PID"
         if [ "$TUNNEL_URL" != "?" ]; then
             echo "              URL: $TUNNEL_URL"
@@ -88,8 +96,16 @@ check_status() {
     elif pgrep -f "ngrok" > /dev/null; then
         local NGROK_PID=$(pgrep -f "ngrok" | head -1)
         echo "  ${GREEN}[ONLINE]${NC}  Ngrok - PID $NGROK_PID"
-    elif pgrep -f "lt" > /dev/null; then
+        local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1 || echo "?")
+        if [ "$NGROK_URL" != "?" ]; then
+            echo "              URL: $NGROK_URL"
+        fi
+    elif pgrep -f "localtunnel" > /dev/null; then
         echo "  ${GREEN}[ONLINE]${NC}  LocalTunnel aktif"
+        local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1 || echo "?")
+        if [ "$LT_URL" != "?" ]; then
+            echo "              URL: $LT_URL"
+        fi
     elif pgrep -f "pagekite" > /dev/null; then
         echo "  ${GREEN}[ONLINE]${NC}  Pagekite aktif"
     elif pgrep -f "serveo" > /dev/null; then
@@ -125,10 +141,12 @@ check_status() {
 stop_all() {
     sep
     info "Menghentikan semua service..."
-    pkill -f "node server" 2>/dev/null && ok "Node.js dihentikan" || warn "Node.js tidak jalan"
+    mkdir -p /tmp
+
+    pkill -f "node server.js" 2>/dev/null && ok "Node.js dihentikan" || warn "Node.js tidak jalan"
     pkill -f "cloudflared" 2>/dev/null && ok "Cloudflare dihentikan" || warn "Cloudflare tidak jalan"
     pkill -f "ngrok" 2>/dev/null && ok "Ngrok dihentikan" || warn "Ngrok tidak jalan"
-    pkill -f "lt " 2>/dev/null && ok "LocalTunnel dihentikan" || warn "LocalTunnel tidak jalan"
+    pkill -f "localtunnel" 2>/dev/null && ok "LocalTunnel dihentikan" || warn "LocalTunnel tidak jalan"
     pkill -f "pagekite" 2>/dev/null && ok "Pagekite dihentikan" || warn "Pagekite tidak jalan"
     pkill -f "serveo" 2>/dev/null && ok "Serveo dihentikan" || warn "Serveo tidak jalan"
     ok "Semua service dihentikan."
@@ -142,14 +160,41 @@ start_server() {
     sleep 1
 
     cd "$SCRIPT_DIR"
+
+    # Ensure log dir exists
+    mkdir -p /tmp
+
     local PORT=${1:-3000}
-    PORT=$PORT nohup node server.js > /tmp/amprem.log 2>&1 &
+
+    # Cari path node secara eksplisit
+    local NODE_BIN
+    if $IS_TERMUX; then
+        NODE_BIN="$PREFIX/bin/node"
+    else
+        NODE_BIN="$(command -v node)"
+    fi
+
+    if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
+        warn "Node.js tidak ditemukan di PATH. Jalankan 'I' di menu untuk install."
+        return 1
+    fi
+
+    # Jalankan server dengan nohup + explicit path + stderr capture
+    cd "$SCRIPT_DIR"
+    PORT=$PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > /tmp/amprem.log 2>&1 &
+
+    local SERVER_PID=$!
     sleep 3
 
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:${PORT}/ | grep -q "200"; then
-        ok "Server jalan di port $PORT"
+    # Cek apakah process masih hidup
+    if kill -0 $SERVER_PID 2>/dev/null; then
+        ok "Server jalan (PID: $SERVER_PID) di port $PORT"
     else
-        warn "Server mungkin belum sepenuhnya jalan. Cek: cat /tmp/amprem.log"
+        warn "Server gagal start. Cek error:"
+        echo ""
+        cat /tmp/amprem.log
+        echo ""
+        return 1
     fi
 }
 
@@ -420,22 +465,34 @@ deploy_ngrok() {
     info "Mode: Ngrok"
     echo "  Butuh akun di https://ngrok.com"
     echo "  1. Daftar gratis di ngrok.com"
-    echo "  2. Copy authtoken"
+    echo "  2. Copy authtoken dari dashboard"
     echo "  3. Paste di bawah"
     echo ""
 
     # Install ngrok
-    if ! command -v ngrok &>/dev/null; then
+    local NGROK_BIN
+    if $IS_TERMUX; then
+        NGROK_BIN="$PREFIX/bin/ngrok"
+    else
+        NGROK_BIN="$(command -v ngrok)"
+    fi
+
+    if [ -z "$NGROK_BIN" ] || [ ! -x "$NGROK_BIN" ]; then
         info "Install Ngrok..."
         if $IS_TERMUX; then
             pkg install wget -y
-            wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz -O /tmp/ngrok.tgz
-            tar -xzf /tmp/ngrok.tgz -C /data/data/com.termux/files/usr/bin/
-            chmod +x /data/data/com.termux/files/usr/bin/ngrok
+            # Termux ARM64
+            wget -q "https://github.com/ngrok/ngrok/releases/latest/download/ngrok-v3-stable-linux-arm64.tgz" -O /tmp/ngrok.tgz 2>/dev/null || \
+            wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz" -O /tmp/ngrok.tgz
+            tar -xzf /tmp/ngrok.tgz -C "$PREFIX/bin/"
+            chmod +x "$PREFIX/bin/ngrok"
+            NGROK_BIN="$PREFIX/bin/ngrok"
         else
-            wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz -O /tmp/ngrok.tgz
+            wget -q "https://github.com/ngrok/ngrok/releases/latest/download/ngrok-v3-stable-linux-amd64.tgz" -O /tmp/ngrok.tgz 2>/dev/null || \
+            wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz" -O /tmp/ngrok.tgz
             tar -xzf /tmp/ngrok.tgz -C /usr/local/bin/
             chmod +x /usr/local/bin/ngrok
+            NGROK_BIN="/usr/local/bin/ngrok"
         fi
     fi
 
@@ -443,12 +500,22 @@ deploy_ngrok() {
     read -rp "  Masukkan Ngrok Authtoken: " NGROK_TOKEN
     [ -z "$NGROK_TOKEN" ] && fail "Authtoken tidak boleh kosong."
 
-    ngrok config add-authtoken "$NGROK_TOKEN" 2>/dev/null || true
+    mkdir -p ~/.config/ngrok
+    cat > ~/.config/ngrok/ngrok.yml <<EOF
+authtoken: ${NGROK_TOKEN}
+region: ap
+EOF
 
     start_server 8080
 
     pkill -f "ngrok" 2>/dev/null || true
-    nohup ngrok http 8080 --log /tmp/amprem-ngrok.log > /dev/null 2>&1 &
+    mkdir -p /tmp
+
+    if $IS_TERMUX; then
+        PATH="$PREFIX/bin:$PATH" "$NGROK_BIN" http 8080 > /tmp/amprem-ngrok.log 2>&1 &
+    else
+        "$NGROK_BIN" http 8080 > /tmp/amprem-ngrok.log 2>&1 &
+    fi
     sleep 5
 
     local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1)
@@ -571,13 +638,40 @@ deploy_localtunnel() {
     info "Mode: LocalTunnel"
     info "URL gratis, tanpa akun."
 
+    # Cari lt path
+    local LT_BIN
+    if $IS_TERMUX; then
+        LT_BIN="$PREFIX/bin/lt"
+    else
+        LT_BIN="$(command -v lt)"
+    fi
+
+    if [ -z "$LT_BIN" ] || [ ! -x "$LT_BIN" ]; then
+        info "Install LocalTunnel..."
+        if $IS_TERMUX; then
+            npm install -g localtunnel 2>&1 | tail -3
+            LT_BIN="$PREFIX/bin/lt"
+        else
+            npm install -g localtunnel 2>&1 | tail -3
+            LT_BIN="$(command -v lt)"
+        fi
+    fi
+
+    if [ -z "$LT_BIN" ] || [ ! -x "$LT_BIN" ]; then
+        warn "LocalTunnel gagal install. Cek: npm install -g localtunnel"
+    fi
+
+    mkdir -p /tmp
     start_server 8080
 
-    pkill -f "lt " 2>/dev/null || true
-    nohup lt --port 8080 > /tmp/amprem-lt.log 2>&1 &
-    sleep 8
+    $IS_TERMUX && local LT_ENV="PATH=$PREFIX/bin:$PATH" || local LT_ENV=""
 
-    local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1)
+    eval "$LT_ENV $LT_BIN --port 8080" > /tmp/amprem-lt.log 2>&1 &
+    sleep 10
+
+    # Cari URL dari log
+    local LT_URL
+    LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1)
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
@@ -586,12 +680,13 @@ deploy_localtunnel() {
         echo "  URL PUBLIK:"
         echo -e "    ${GREEN}${BOLD}${LT_URL}${NC}"
         echo ""
-        echo "  NOTE: URL ini mungkin berubah setiap sesi."
+        echo "  NOTE: Buka URL ini di browser SEKALI untuk bypass captcha."
+        echo "  NOTE: URL berubah setiap sesi."
     else
         echo "  URL belum muncul. Cek: cat /tmp/amprem-lt.log"
     fi
     echo ""
-    echo "  Stop: pkill -f 'lt '"
+    echo "  Stop: pkill -f 'localtunnel'"
 }
 
 # ============================================================
@@ -609,10 +704,21 @@ deploy_pagekite() {
     if ! command -v pagekite &>/dev/null; then
         info "Install Pagekite..."
         if $IS_TERMUX; then
-            pip install pagekite 2>/dev/null || pip3 install pagekite 2>/dev/null
+            pip install pagekite 2>&1 | tail -3 || pip3 install pagekite 2>&1 | tail -3
         else
-            pip install pagekite 2>/dev/null || pip3 install pagekite 2>/dev/null
+            pip install pagekite 2>&1 | tail -3 || pip3 install pagekite 2>&1 | tail -3
         fi
+    fi
+
+    local PK_BIN
+    if $IS_TERMUX; then
+        PK_BIN="$PREFIX/bin/pagekite"
+    else
+        PK_BIN="$(command -v pagekite)"
+    fi
+
+    if [ -z "$PK_BIN" ] || [ ! -x "$PK_BIN" ]; then
+        fail "Pagekite gagal install. Cek: pip install pagekite"
     fi
 
     echo ""
@@ -621,8 +727,14 @@ deploy_pagekite() {
 
     start_server 8080
 
+    mkdir -p /tmp
     pkill -f "pagekite" 2>/dev/null || true
-    nohup pagekite 8080 :8080 $PK_CFG > /tmp/amprem-pk.log 2>&1 &
+
+    if $IS_TERMUX; then
+        PATH="$PREFIX/bin:$PATH" "$PK_BIN" 8080 :8080 $PK_CFG > /tmp/amprem-pk.log 2>&1 &
+    else
+        "$PK_BIN" 8080 :8080 $PK_CFG > /tmp/amprem-pk.log 2>&1 &
+    fi
     sleep 5
 
     sep
@@ -640,20 +752,43 @@ deploy_serveo() {
     info "Mode: Serveo SSH Tunnel"
     echo "  Gratis via SSH reverse tunnel. Tanpa akun."
 
+    # Cek ssh ada
+    local SSH_BIN
+    if $IS_TERMUX; then
+        SSH_BIN="$PREFIX/bin/ssh"
+    else
+        SSH_BIN="$(command -v ssh)"
+    fi
+
+    if [ -z "$SSH_BIN" ] || [ ! -x "$SSH_BIN" ]; then
+        info "Install SSH..."
+        if $IS_TERMUX; then
+            pkg install openssh -y
+            SSH_BIN="$PREFIX/bin/ssh"
+        else
+            apt install -y openssh-client 2>/dev/null || yum install -y openssh-clients
+            SSH_BIN="$(command -v ssh)"
+        fi
+    fi
+
     start_server 8080
 
+    mkdir -p /tmp
     pkill -f "serveo" 2>/dev/null || true
 
     echo ""
     read -rp "  Masukkan subdomain (kosongkan untuk random): " SERVEO_SUBDOMAIN
-    local SERVEO_CMD="ssh -o StrictHostKeyChecking=no -R 80:localhost:8080 serveo.net"
-    [ -n "$SERVEO_SUBDOMAIN" ] && SERVEO_CMD="$SERVEO_CMD -subdomain=$SERVEO_SUBDOMAIN"
+    local SERVEO_CMD
+    if [ -n "$SERVEO_SUBDOMAIN" ]; then
+        SERVEO_CMD="$SSH_BIN -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net -R ${SERVEO_SUBDOMAIN}:80:localhost:8080"
+    else
+        SERVEO_CMD="$SSH_BIN -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net"
+    fi
 
-    nohup $SERVEO_CMD > /tmp/amprem-serveo.log 2>&1 &
+    setsid $SERVEO_CMD > /tmp/amprem-serveo.log 2>&1 &
     sleep 8
 
-    local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1 || \
-                      grep -oP 'Forwarding HTTP traffic from' /tmp/amprem-serveo.log 2>/dev/null)
+    local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1)
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
@@ -663,6 +798,7 @@ deploy_serveo() {
         echo -e "    ${GREEN}${BOLD}${SERVEO_URL}${NC}"
     else
         echo "  Cek log: cat /tmp/amprem-serveo.log"
+        echo "  Serveo perlu SSH connection. Pastikan koneksi internet aktif."
     fi
     echo ""
     echo "  Stop: pkill -f 'serveo'"
