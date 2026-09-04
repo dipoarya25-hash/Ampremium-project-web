@@ -148,25 +148,27 @@ show_menu() {
     if $IS_TERMUX; then
         echo -e "${YELLOW}  Pilih cara akses:${NC}"
         echo ""
-        echo "    1) WiFi Lokal     - akses dari HP/laptop lain di WiFi sama"
-        echo "    2) Cloudflare Quick - URL internet gratis (*.trycloudflare.com)"
-        echo "    3) Domain         - URL internet permanen (butuh domain + Cloudflare)"
+        echo "    1) WiFi Lokal         - akses dari HP/laptop lain di WiFi sama"
+        echo "    2) Cloudflare Quick    - URL internet gratis (*.trycloudflare.com)"
+        echo "    3) Cloudflare Named    - URL internet permanen via domain di Cloudflare"
+        echo "    4) Domain + Nginx     - https://domain.com via Nginx (butuh domain)"
         echo ""
-        read -rp "  Pilih [1-3]: " PILIH
+        read -rp "  Pilih [1-4]: " PILIH
 
         case "$PILIH" in
             1) deploy_termux_wifi ;;
             2) deploy_termux_quick ;;
-            3) deploy_termux_domain ;;
+            3) deploy_termux_named ;;
+            4) deploy_termux_domain ;;
             *) warn "Pilihan tidak valid."; show_menu ;;
         esac
     else
         echo -e "${YELLOW}  Pilih cara akses:${NC}"
         echo ""
-        echo "    1) IP Only        - akses via http://IP_VPS (tanpa domain)"
-        echo "    2) Domain + SSL   - https://domain.com (butuh domain)"
-        echo "    3) Cloudflare Quick - URL internet gratis (*.trycloudflare.com)"
-        echo "    4) Domain + Cloudflare - https://domain.com via tunnel"
+        echo "    1) IP Only              - akses via http://IP_VPS (tanpa domain)"
+        echo "    2) Domain + Nginx + SSL - https://domain.com (butuh domain)"
+        echo "    3) Cloudflare Quick     - URL internet gratis (*.trycloudflare.com)"
+        echo "    4) Cloudflare Named     - URL internet permanen via domain di Cloudflare"
         echo ""
         read -rp "  Pilih [1-4]: " PILIH
 
@@ -174,7 +176,7 @@ show_menu() {
             1) deploy_vps_ip ;;
             2) deploy_vps_domain ;;
             3) deploy_vps_quick ;;
-            4) deploy_vps_domain_cf ;;
+            4) deploy_vps_named ;;
             *) warn "Pilihan tidak valid."; show_menu ;;
         esac
     fi
@@ -256,12 +258,15 @@ deploy_termux_quick() {
 }
 
 # ============================================================
-#  DEPLOY: TERMUX - DOMAIN CLOUDFLARE
+#  DEPLOY: TERMUX - CLOUDFLARE NAMED TUNNEL
 # ============================================================
-deploy_termux_domain() {
+deploy_termux_named() {
     sep
-    info "Mode: Domain via Cloudflare Tunnel"
-    info "SSL otomatis dari Cloudflare."
+    info "Mode: Cloudflare Named Tunnel (Domain Permanen)"
+    info "SSL otomatis dari Cloudflare. URL tidak berubah."
+
+    echo ""
+    read -rp "  Masukkan domain (contoh: amprem.example.com): " DOMAIN
 
     echo ""
     read -rp "  Masukkan domain (contoh: amprem.example.com): " DOMAIN
@@ -304,6 +309,48 @@ EOF
     echo -e "    ${GREEN}${BOLD}https://${DOMAIN}${NC}"
     echo ""
     echo "  Stop: pkill -f 'node server' && pkill -f 'cloudflared'"
+}
+
+# ============================================================
+#  DEPLOY: TERMUX - DOMAIN + NGINX (serve langsung)
+# ============================================================
+deploy_termux_domain() {
+    sep
+    info "Mode: Domain + Serve Langsung (Tanpa Nginx)"
+    info "HTTPS via Cloudflare Proxy. Port: 8080."
+
+    echo ""
+    read -rp "  Masukkan domain (contoh: amprem.example.com): " DOMAIN
+    DOMAIN=$(echo "$DOMAIN" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+    [ -z "$DOMAIN" ] && fail "Domain tidak boleh kosong."
+
+    echo ""
+    info "Setup Cloudflare DNS (CNAME -> proxied)..."
+    echo ""
+    echo "  Buka https://dash.cloudflare.com"
+    echo "  Pergi ke DNS -> Records"
+    echo "  Tambah record:"
+    echo "    Type: CNAME"
+    echo "    Name: subdomain (bagian sebelum titik)"
+    echo "    Target: $(whoami)@$(hostname).termux.net"
+    echo "    Proxy: ON (warna orange)"
+    echo ""
+    read -rp "  Tekan ENTER setelah DNS sudah ditambah..."
+
+    pkill -f "node server" 2>/dev/null || true
+    sleep 1
+
+    cd "$SCRIPT_DIR"
+    PORT=8080 nohup node server.js > /tmp/amprem.log 2>&1 &
+    sleep 3
+
+    sep
+    echo -e "${GREEN}  BERHASIL JALAN!${NC}"
+    echo ""
+    echo "  Domain:"
+    echo -e "    ${GREEN}${BOLD}https://${DOMAIN}${NC}"
+    echo ""
+    echo "  Stop: pkill -f 'node server'"
 }
 
 # ============================================================
@@ -488,12 +535,12 @@ deploy_vps_quick() {
 }
 
 # ============================================================
-#  DEPLOY: VPS - DOMAIN + CLOUDFLARE TUNNEL
+#  DEPLOY: VPS - DOMAIN + CLOUDFLARE NAMED TUNNEL
 # ============================================================
-deploy_vps_domain_cf() {
+deploy_vps_named() {
     sep
-    info "Mode: Domain via Cloudflare Tunnel"
-    info "SSL otomatis dari Cloudflare."
+    info "Mode: Cloudflare Named Tunnel (Domain Permanen)"
+    info "SSL otomatis dari Cloudflare. URL tidak berubah."
 
     echo ""
     read -rp "  Masukkan domain (contoh: amprem.example.com): " DOMAIN
@@ -555,7 +602,7 @@ EOF
 # ============================================================
 #  DONE
 # ============================================================
-all_all_done() {
+all_done() {
     sep
     echo -e "${GREEN}"
     echo "  ███████╗ ██████╗ █████╗ ██╗   ██╗██████╗ ██╗███╗   ██╗ ██████╗ "
