@@ -1,397 +1,142 @@
 # Amprem Web
 
-Website Alight Motion Premium - 7 varian aktivasi, masing-masing halaman terpisah.
-
-## File Penting
-
-| File | Fungsi |
-|------|---------|
-| `server.js` | Backend Express |
-| `config.js` | Konfigurasi API key |
-| `setup-vps-domain.sh` | Setup VPS + Domain (auto install semua) |
-| `setup-termux-domain.sh` | Setup Termux + Domain (auto install semua) |
-| `setup-nginx.sh` | Setup VPS (semua opsi) |
-| `setup-termux.sh` | Setup Termux (semua opsi) |
-| `config.sh` | Edit config via CLI |
+Website Alight Motion Premium - 7 varian aktivasi premium.
 
 ---
 
-# CARA INSTALL - PILIH SALAH SATU
+# CARA INSTALL (GAMPANG)
 
-## VPS + DOMAIN (Auto Setup)
+## 1. Clone Repo
 
-### Langkah 1: Siapkan VPS
-
-Gunakan VPS (Ubuntu 20/22) dari provider seperti:
-- DigitalOcean
-- Vultr
-- Linode
-- Hetzner
-- AWS EC2
-- dll
-
-Buka ports: **80** dan **443** di firewall/panel VPS.
-
-### Langkah 2: Clone & Jalankan
-
+**Termux (HP Android):**
 ```bash
-# SSH ke VPS, lalu:
+pkg update && pkg install git -y
+git clone https://github.com/yowbxz/amprem-web.git
+cd amprem-web
+```
 
-# 1. Install git
+**VPS (Ubuntu/Debian):**
+```bash
 sudo apt update && sudo apt install -y git
-
-# 2. Clone repo
 git clone https://github.com/yowbxz/amprem-web.git
 cd amprem-web
-
-# 3. Jalankan auto setup
-sudo bash setup-vps-domain.sh
 ```
 
-### Langkah 3: Masukkan Domain
+## 2. Jalankan Setup
 
-```
-Masukkan domain (contoh: amprem.example.com): amprem.example.com
-```
-
-### Langkah 4: Edit Config
-
-Script akan buka `nano` untuk edit `config.js`:
-
-```
-amprem6ApiKey : 'SK-5A6D0C0FB6D7B35A71B9A70F'   <- komunitas (ganti kalau mau)
-amprem2ApiKey : ''                                  <- WAJIB ISI kalau pakai Amprem2
+```bash
+bash setup.sh
 ```
 
-- `amprem2ApiKey`: daftar di https://api.haidarxd.my.id untuk dapat key
-- Tekan **Ctrl+O** -> **Enter** -> **Ctrl+X** untuk save & exit nano
+Selesai! Script otomatis install semua yang dibutuhkan dan tanya mau pakai cara akses yang mana.
 
-### Langkah 5: Setup SSL
+---
 
-```
-Pasang SSL sekarang? [Y/n]: Y
-```
-
-Kalau DNS sudah pointing ke IP VPS, SSL otomatis terinstall.
-
-### Langkah 6: Selesai
+# YANG DILAKUKAN SCRIPT
 
 ```
-SELESAI!
-  Domain  : https://amprem.example.com
-  Lokal   : http://localhost:3000
+1. Install dependencies    - Node.js, Git, nano, cloudflared (otomatis)
+2. Install project        - npm install (otomatis)
+3. Edit config           - Buka nano untuk atur API key
+4. Pilih deployment       - Pilih cara akses
+5. Jalankan server       - Done!
 ```
 
 ---
 
-## TERMUX (HP ANDROID) + DOMAIN (Auto Setup)
+# PILIHAN DEPLOYMENT
 
-### Langkah 1: Install Termux
+## Termux (HP Android)
 
-1. Download **Termux** dari **F-Droid** (bukan Play Store!)
-   - Play Store versi Termux sudah tidak diupdate dan tidak work
-   - Download: https://f-droid.org/en/packages/com.termux/
+| No | Cara | Hasil | Kebutuhan |
+|----|------|-------|-----------|
+| 1 | WiFi Lokal | `http://IP_HP:8080` | HP lain di WiFi sama |
+| 2 | Cloudflare Quick | URL `*.trycloudflare.com` | Semua orang (URL berubah tiap restart) |
+| 3 | Domain | `https://domain.com` | Domain di Cloudflare |
 
-2. Buka Termux
+## VPS (Ubuntu/Debian)
 
-### Langkah 2: Update Package
-
-```bash
-pkg update && pkg upgrade -y
-```
-
-### Langkah 3: Install Git
-
-```bash
-pkg install git -y
-```
-
-### Langkah 4: Clone Repo
-
-```bash
-git clone https://github.com/yowbxz/amprem-web.git
-cd amprem-web
-```
-
-### Langkah 5: Jalankan Auto Setup
-
-```bash
-bash setup-termux-domain.sh
-```
-
-### Langkah 6: Masukkan Domain
-
-```
-Masukkan domain (contoh: amprem.example.com): amprem.example.com
-```
-
-### Langkah 7: Login Cloudflare
-
-- Browser akan terbuka
-- Login ke Cloudflare
-- Pilih domain yang mau dipakai
-- Kembali ke Termux, tekan **ENTER**
-
-### Langkah 8: Edit Config
-
-Script akan buka `nano`:
-
-```
-amprem6ApiKey : 'SK-5A6D0C0FB6D7B35A71B9A70F'   <- komunitas
-amprem2ApiKey : ''                                  <- WAJIB ISI kalau pakai Amprem2
-```
-
-- Tekan **Ctrl+O** -> **Enter** -> **Ctrl+X** untuk save & exit
-
-### Langkah 9: Selesai
-
-```
-SELESAI!
-  Domain  : https://amprem.example.com
-  Lokal   : http://localhost:8080
-```
-
----
-
-## VPS - TANPA DOMAIN (IP Only)
-
-### Langkah 1: Install di VPS
-
-```bash
-# SSH ke VPS
-sudo apt update && sudo apt install -y git nodejs npm nginx
-
-# Clone
-git clone https://github.com/yowbxz/amprem-web.git
-cd amprem-web
-npm install
-
-# Edit config
-nano config.js
-
-# Jalankan
-npm start
-```
-
-### Langkah 2: Buka Port
-
-```bash
-sudo ufw allow 80
-sudo ufw allow 3000
-```
-
-### Langkah 3: Akses
-
-Buka browser: `http://IP_VPS_KAMU`
-
----
-
-## TERMUX - TANPA DOMAIN (Lokal/WiFi)
-
-### Langkah 1: Install di Termux
-
-```bash
-# Update
-pkg update && pkg upgrade -y
-
-# Install
-pkg install nodejs git -y
-
-# Clone
-git clone https://github.com/yowbxz/amprem-web.git
-cd amprem-web
-npm install
-
-# Edit config
-nano config.js
-
-# Jalankan
-npm start
-```
-
-### Langkah 2: Akses
-
-```
-Lokal      : http://localhost:3000     (di HP sendiri)
-WiFi       : http://IP_HP:3000        (dari HP/laptop lain, 1 WiFi)
-```
-
-Cek IP HP:
-```bash
-ifconfig | grep inet
-```
+| No | Cara | Hasil | Kebutuhan |
+|----|------|-------|-----------|
+| 1 | IP Only | `http://IP_VPS` | IP publik VPS |
+| 2 | Domain + SSL | `https://domain.com` | Domain + Certbot |
+| 3 | Cloudflare Quick | URL `*.trycloudflare.com` | Semua orang (URL berubah) |
+| 4 | Domain + Cloudflare | `https://domain.com` | Domain di Cloudflare |
 
 ---
 
 # EDIT CONFIG
 
-## Via Nano (Editor)
+Buka `config.js` untuk atur API key:
 
 ```bash
 nano config.js
 ```
 
-## Via Script Interaktif
-
+Atau lewat script:
 ```bash
 bash config.sh
 ```
 
-## Via Sed (Langsung)
+Isi yang penting:
+- **amprem2ApiKey** - WAJIB isi kalau pakai Amprem2. Daftar di `api.haidarxd.my.id`
+- **amprem6ApiKey** - Sudah ada default (komunitas). Ganti kalau mau punya sendiri di `free-restapi.biz.id`
+
+---
+
+# PERINTAH PENTING
 
 ```bash
-# Ganti amprem6ApiKey:
-sed -i "s/amprem6ApiKey: '.*'/amprem6ApiKey: 'SK-BARU'/" config.js
+# Jalankan server
+node server.js
 
-# Ganti amprem2ApiKey:
-sed -i "s/amprem2ApiKey: '.*'/amprem2ApiKey: 'KEY_BARU'/" config.js
+# Ganti port
+PORT=8080 node server.js
+
+# Lihat log
+cat /tmp/amprem.log
+
+# Stop server
+pkill -f "node server"
+
+# Update ke versi terbaru
+git pull origin main && npm install
 ```
 
 ---
 
-# KONFIGURASI API KEY
+# FILE UTAMA
 
-Buka `config.js`:
-
-```js
-amprem6ApiKey: 'SK-5A6D0C0FB6D7B35A71B9A70F'
-// ^ API key komunitas (gratisan). Bisa kena limit.
-//   Daftar sendiri: free-restapi.biz.id/users/register
-
-amprem2ApiKey: ''
-// ^ WAJIB ISI kalau mau pakai Amprem2.
-//   Daftar di: api.haidarxd.my.id
 ```
-
-**Varian lain tidak butuh config tambahan** - langsung jalan.
-
----
-
-# UPDATE KE VERSI TERBARU
-
-```bash
-cd amprem-web
-git pull origin main
-npm install
+setup.sh              - SATU script install + setup (pakai ini)
+config.sh             - Edit config via CLI
+config.js             - Konfigurasi API key
+server.js             - Backend Express
+public/               - Frontend (HTML/CSS/JS)
 ```
 
 ---
 
 # TROUBLESHOOTING
 
-### "Port 3000 sudah dipakai"
-
+**Port sudah dipakai:**
 ```bash
-# Cari process
 lsof -i :3000
-
-# Kill
 kill -9 <PID>
-
-# Atau pakai port lain
-PORT=8080 npm start
 ```
 
-### VPS: "apt: command not found"
-
+**npm install error:**
 ```bash
-# CentOS/RHEL
-yum update
-yum install -y git nodejs npm nginx
-
-# Atau pakai NodeSource:
-curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-yum install -y nodejs
+rm -rf node_modules package-lock.json
+npm install
 ```
 
-### Termux: "Permission denied"
-
+**VPS: Port tidak bisa diakses:**
 ```bash
-termux-setup-storage
-# Pilih Allow
-```
-
-### VPS: "SSL gagal install"
-
-Pastikan DNS domain sudah pointing ke IP VPS:
-```bash
-# Cek IP VPS
-curl ifconfig.me
-
-# Cek DNS domain
-dig +short namadomain.com
-```
-
-### Server tidak jalan
-
-```bash
-# Cek log
-cat /tmp/amprem.log        # VPS
-cat /tmp/amprem-termux.log # Termux
-
-# Restart
-cd amprem-web && node server.js
-```
-
-### Termux: "cloudflared: command not found"
-
-```bash
-pkg install cloudflared -y
+sudo ufw allow 80
+sudo ufw allow 443
 ```
 
 ---
 
-# RINGKASAN COMMAND
-
-## Termux
-
-```bash
-# Install semua dari awal
-pkg update && pkg upgrade -y
-pkg install git nodejs -y
-git clone https://github.com/yowbxz/amprem-web.git
-cd amprem-web
-npm install
-
-# Domain auto setup
-bash setup-termux-domain.sh
-
-# Edit config
-nano config.js
-
-# Jalanin
-npm start
-PORT=8080 npm start
-```
-
-## VPS
-
-```bash
-# Install semua dari awal
-sudo apt update && sudo apt install -y git
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs nginx certbot
-git clone https://github.com/yowbxz/amprem-web.git
-cd amprem-web
-npm install
-
-# Domain auto setup
-sudo bash setup-vps-domain.sh
-
-# Edit config
-nano config.js
-
-# Jalanin
-npm start
-PORT=8080 npm start
-
-# Atau pakai PM2 (tahan restart)
-npm install -g pm2
-pm2 start server.js --name amprem
-pm2 save
-pm2 startup
-```
-
-## GitHub Repo
-
-https://github.com/yowbxz/amprem-web
+Repo: https://github.com/yowbxz/amprem-web
