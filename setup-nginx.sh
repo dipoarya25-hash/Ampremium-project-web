@@ -42,13 +42,13 @@ install_nginx() {
     else
         info "Install Nginx..."
         if command -v apt &>/dev/null; then
-            apt update -qq && apt install -y -qq nginx
+            apt update -qq && apt install -y -qq nginx nano
         elif command -v yum &>/dev/null; then
-            yum install -y nginx
+            yum install -y nginx nano
         elif command -v dnf &>/dev/null; then
-            dnf install -y nginx
+            dnf install -y nginx nano
         elif command -v pacman &>/dev/null; then
-            pacman -Sy --noconfirm nginx
+            pacman -Sy --noconfirm nginx nano
         else
             fail "Package manager tidak dikenali. Install nginx manual dulu."
         fi
@@ -393,6 +393,38 @@ EOF
 # ============================================================
 #  MAIN
 # ============================================================
+
+# ---------- Edit config dulu ----------
+CONFIG_FILE="$SCRIPT_DIR/config.js"
+if [ -f "$CONFIG_FILE" ]; then
+    AMPREM6=$(grep "amprem6ApiKey:" "$CONFIG_FILE" 2>/dev/null | sed "s/.*'\([^']*\)'.*/\1/" | head -c 15)
+    AMPREM2=$(grep "amprem2ApiKey:" "$CONFIG_FILE" 2>/dev/null | sed "s/.*'\([^']*\)'.*/\1/")
+
+    echo ""
+    echo -e "${CYAN}=========================================${NC}"
+    echo -e "${CYAN}  Konfigurasi API Key${NC}"
+    echo -e "${CYAN}=========================================${NC}"
+    echo ""
+    echo "  amprem6ApiKey : ${AMPREM6:-<tidak diatur>}..."
+    echo "  amprem2ApiKey : ${AMPREM2:-<kosong - wajib diisi kalau pakai Amprem2>}"
+    echo ""
+    read -rp "  Edit config sekarang? [y/N]: " DO_CONFIG
+    if [[ "$DO_CONFIG" =~ ^[Yy]$ ]]; then
+        if command -v nano &>/dev/null; then
+            nano "$CONFIG_FILE"
+        elif command -v vim &>/dev/null; then
+            vim "$CONFIG_FILE"
+        elif command -v vi &>/dev/null; then
+            vi "$CONFIG_FILE"
+        else
+            cat "$CONFIG_FILE"
+            echo ""
+            echo "  Edit manual file: $CONFIG_FILE"
+            echo "  Lalu lanjutkan script ini."
+            read -rp "  Tekan ENTER untuk lanjut..."
+        fi
+    fi
+fi
 
 echo ""
 echo -e "${CYAN}=========================================${NC}"

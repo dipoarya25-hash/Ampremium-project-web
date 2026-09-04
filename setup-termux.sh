@@ -32,7 +32,7 @@ fi
 install_deps() {
     info "Update dan install dependencies..."
     pkg update -y
-    pkg install -y nodejs
+    pkg install -y nodejs nano
 
     if ! command -v node &>/dev/null; then
         fail "Node.js gagal diinstall."
@@ -161,6 +161,38 @@ EOF
 # ============================================================
 #  MAIN
 # ============================================================
+
+# ---------- Edit config dulu ----------
+CONFIG_FILE="$SCRIPT_DIR/config.js"
+if [ -f "$CONFIG_FILE" ]; then
+    AMPREM6=$(grep "amprem6ApiKey:" "$CONFIG_FILE" 2>/dev/null | sed "s/.*'\([^']*\)'.*/\1/" | head -c 15)
+    AMPREM2=$(grep "amprem2ApiKey:" "$CONFIG_FILE" 2>/dev/null | sed "s/.*'\([^']*\)'.*/\1/")
+
+    echo ""
+    echo -e "${CYAN}=========================================${NC}"
+    echo -e "${CYAN}  Konfigurasi API Key${NC}"
+    echo -e "${CYAN}=========================================${NC}"
+    echo ""
+    echo "  amprem6ApiKey : ${AMPREM6:-<tidak diatur>}..."
+    echo "  amprem2ApiKey : ${AMPREM2:-<kosong - wajib diisi kalau pakai Amprem2>}"
+    echo ""
+    read -rp "  Edit config sekarang? [y/N]: " DO_CONFIG
+    if [[ "$DO_CONFIG" =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "  1) nano"
+        echo "  2) vi"
+        echo "  3) cat (baca saja)"
+        echo ""
+        read -rp "  Pilih editor [1]: " EDITOR_CHOICE
+        case "$EDITOR_CHOICE" in
+            2) vim "$CONFIG_FILE" 2>/dev/null || vi "$CONFIG_FILE" ;;
+            3) cat "$CONFIG_FILE" ;;
+            *) nano "$CONFIG_FILE" ;;
+        esac
+        echo ""
+        echo "  Config sudah disimpan."
+    fi
+fi
 
 echo ""
 echo -e "${CYAN}=========================================${NC}"
