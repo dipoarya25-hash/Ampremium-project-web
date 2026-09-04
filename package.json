@@ -1,0 +1,16 @@
+{
+  "name": "amprem-web",
+  "version": "1.0.0",
+  "description": "Website Alight Motion Premium (7 varian, halaman terpisah) - berdiri sendiri, tanpa Baileys/bot WhatsApp",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.21.1"
+  }
+}

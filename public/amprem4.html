@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Amprem4 — Alight Motion Premium</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <a class="back-link" href="index.html">&larr; Semua varian</a>
+
+  <div class="product-header">
+    <p class="product-eyebrow">Alight Motion Pro</p>
+    <h1 class="product-title">Amprem4</h1>
+    <p class="product-sub">Khusus buat email pribadi kamu sendiri (Gmail dkk) yang bisa kamu cek langsung.</p>
+  </div>
+
+  <!-- Step 1 -->
+  <div class="step-card accent-a">
+    <div class="step-head">
+      <div class="step-badge a">1</div>
+      <div class="step-title">Masukkan Email Akun</div>
+    </div>
+    <p class="step-desc">Ketik email yang mau didaftarkan. Server akan mengirimkan magic link verifikasi.</p>
+
+    <div class="input-row">
+      <span class="icon">@</span>
+      <input type="email" id="email-input" placeholder="nama@email.com" />
+    </div>
+
+    <button class="action-btn a" id="send-btn">➤ Kirim Magic Link ke Email</button>
+    <div class="notice" id="send-notice"></div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step-card accent-b" id="step2" style="display:none">
+    <div class="step-head">
+      <div class="step-badge b">2</div>
+      <div class="step-title">Verifikasi &amp; Upgrade</div>
+    </div>
+    <p class="step-desc">Salin seluruh URL/link verifikasi dari email tadi, lalu tempel di sini:</p>
+
+    <div class="input-row">
+      <span class="icon">🔗</span>
+      <input type="url" id="link-input" placeholder="https://...&oobCode=..." />
+      <button class="paste-btn" id="paste-btn">Paste Link</button>
+    </div>
+
+    <button class="action-btn b" id="verify-btn">✨ Aktifkan Premium</button>
+    <div class="notice" id="verify-notice"></div>
+  </div>
+
+  <div class="perks">
+    <p class="perks-title">⭐ Keuntungan Alight</p>
+    <div class="perk-item"><div class="perk-icon">🚫</div><div><div class="perk-name">Tanpa Watermark</div><div class="perk-desc">Ekspor video tanpa logo</div></div></div>
+    <div class="perk-item"><div class="perk-icon">🎬</div><div><div class="perk-name">4K 60FPS</div><div class="perk-desc">Ekspor resolusi tertinggi</div></div></div>
+    <div class="perk-item"><div class="perk-icon">✨</div><div><div class="perk-name">Semua Efek Terbuka</div><div class="perk-desc">Preset, transisi, dan lainnya</div></div></div>
+  </div>
+
+  <footer class="note">Berdiri sendiri, gak nyambung ke bot WhatsApp manapun.</footer>
+</div>
+
+<script src="client.js"></script>
+<script>
+  const emailInput = document.getElementById('email-input')
+  const sendBtn = document.getElementById('send-btn')
+  const sendNotice = document.getElementById('send-notice')
+  const step2 = document.getElementById('step2')
+  const linkInput = document.getElementById('link-input')
+  const pasteBtn = document.getElementById('paste-btn')
+  const verifyBtn = document.getElementById('verify-btn')
+  const verifyNotice = document.getElementById('verify-notice')
+
+  pasteBtn.addEventListener('click', () => pasteFromClipboard(linkInput))
+
+  sendBtn.addEventListener('click', async () => {
+    const email = emailInput.value.trim()
+    if (!email) return showNotice(sendNotice, 'err', 'Isi email dulu ya.')
+    sendBtn.disabled = true
+    sendBtn.textContent = 'Mengirim...'
+    hideNotice(sendNotice)
+    try {
+      const res = await apiCall('/api/amprem4/send', { email })
+      showNotice(sendNotice, 'ok', `✉️ Magic link telah dikirim ke <b>${res.email}</b>. Buka inbox/spam, lalu salin link verifikasi dan lanjutkan ke Step 2.`)
+      step2.style.display = 'block'
+      step2.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    } catch (err) {
+      showNotice(sendNotice, 'err', err.message)
+    } finally {
+      sendBtn.disabled = false
+      sendBtn.textContent = '➤ Kirim Magic Link ke Email'
+    }
+  })
+
+  verifyBtn.addEventListener('click', async () => {
+    const email = emailInput.value.trim()
+    const link = linkInput.value.trim()
+    if (!link) return showNotice(verifyNotice, 'err', 'Tempel link verifikasi dulu ya.')
+    verifyBtn.disabled = true
+    verifyBtn.textContent = 'Memverifikasi...'
+    hideNotice(verifyNotice)
+    try {
+      const res = await apiCall('/api/amprem4/verify', { email, link })
+      renderSuccessCard(verifyNotice, { email: res.email, duration: res.duration })
+    } catch (err) {
+      showNotice(verifyNotice, 'err', err.message)
+    } finally {
+      verifyBtn.disabled = false
+      verifyBtn.textContent = '✨ Aktifkan Premium'
+    }
+  })
+</script>
+</body>
+</html>

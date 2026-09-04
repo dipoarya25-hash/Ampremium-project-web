@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Amprem2 — Alight Motion Premium</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <a class="back-link" href="index.html">&larr; Semua varian</a>
+
+  <div class="product-header">
+    <p class="product-eyebrow">Alight Motion Pro</p>
+    <h1 class="product-title">Amprem2</h1>
+    <p class="product-sub">Versi scraper - satu tombol, backend langsung generate akun.</p>
+  </div>
+
+  <!-- Cuma 1 step, gak perlu email -->
+  <div class="step-card accent-a">
+    <div class="step-head">
+      <div class="step-badge a">1</div>
+      <div class="step-title">Generate Akun</div>
+    </div>
+    <p class="step-desc">Gak perlu isi apa-apa - klik tombol di bawah, server bakal langsung generate akunnya.</p>
+
+    <button class="action-btn a" id="gen-btn">✨ Generate Akun</button>
+    <div class="notice" id="gen-notice"></div>
+  </div>
+
+  <div class="perks">
+    <p class="perks-title">⭐ Keuntungan Alight</p>
+    <div class="perk-item"><div class="perk-icon">🚫</div><div><div class="perk-name">Tanpa Watermark</div><div class="perk-desc">Ekspor video tanpa logo</div></div></div>
+    <div class="perk-item"><div class="perk-icon">🎬</div><div><div class="perk-name">4K 60FPS</div><div class="perk-desc">Ekspor resolusi tertinggi</div></div></div>
+    <div class="perk-item"><div class="perk-icon">✨</div><div><div class="perk-name">Semua Efek Terbuka</div><div class="perk-desc">Preset, transisi, dan lainnya</div></div></div>
+  </div>
+
+  <footer class="note">Berdiri sendiri, gak nyambung ke bot WhatsApp manapun.</footer>
+</div>
+
+<script src="client.js"></script>
+<script>
+  const genBtn = document.getElementById('gen-btn')
+  const genNotice = document.getElementById('gen-notice')
+
+  genBtn.addEventListener('click', async () => {
+    genBtn.disabled = true
+    genBtn.textContent = 'Memproses...'
+    hideNotice(genNotice)
+    try {
+      const res = await apiCall('/api/amprem2/generate')
+      const data = res.data || {}
+      const pick = (...keys) => keys.map((k) => k.split('.').reduce((o, p) => o?.[p], data)).find((x) => x)
+      const email = pick('email', 'data.email', 'result.email')
+      const password = pick('password', 'data.password', 'result.password')
+      const link = pick('link', 'url', 'magicLink', 'data.link', 'data.url')
+      const status = pick('status', 'message', 'data.status', 'data.message')
+
+      if (email || password || link) {
+        const rows = []
+        if (email) rows.push(['Email', email])
+        if (password) rows.push(['Password', password])
+        if (link) rows.push(['Link', link])
+        if (status) rows.push(['Status', status])
+        showNotice(genNotice, 'ok', `✅ Berhasil! ${resultList(rows)}`)
+      } else {
+        showNotice(genNotice, 'ok', `✅ Berhasil, tapi format hasil belum dikenali:<br><code>${JSON.stringify(data).slice(0, 300)}</code>`)
+      }
+    } catch (err) {
+      showNotice(genNotice, 'err', err.message)
+    } finally {
+      genBtn.disabled = false
+      genBtn.textContent = '✨ Generate Akun'
+    }
+  })
+</script>
+</body>
+</html>
