@@ -388,8 +388,6 @@ deploy_menu() {
             *) warn "Pilihan tidak valid."; deploy_menu ;;
         esac
     fi
-
-    deploy_menu
 }
 
 # ============================================================
@@ -543,16 +541,32 @@ deploy_cf_quick() {
     info "URL berubah setiap kali restart."
 
     if ! command -v cloudflared &>/dev/null; then
-        fail "cloudflared belum terinstall. Install dulu."
+        fail "cloudflared belum terinstall."
     fi
+
+    # Cari path cloudflared
+    local CF_BIN
+    if $IS_TERMUX; then
+        CF_BIN="$PREFIX/bin/cloudflared"
+    else
+        CF_BIN="$(command -v cloudflared)"
+    fi
+    [ -z "$CF_BIN" ] && CF_BIN="cloudflared"
 
     start_server 8080
 
+    mkdir -p /tmp
     pkill -f "cloudflared" 2>/dev/null || true
-    nohup cloudflared tunnel --url http://localhost:8080 > /tmp/amprem-tunnel.log 2>&1 &
+
+    if $IS_TERMUX; then
+        PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel --url http://localhost:8080 > /tmp/amprem-tunnel.log 2>&1 &
+    else
+        nohup "$CF_BIN" tunnel --url http://localhost:3000 > /tmp/amprem-tunnel.log 2>&1 &
+    fi
     sleep 5
 
-    local TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/amprem-tunnel.log 2>/dev/null | tail -1)
+    local TUNNEL_URL
+    TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/amprem-tunnel.log 2>/dev/null | tail -1)
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
@@ -582,6 +596,15 @@ deploy_cf_named() {
         fail "cloudflared belum terinstall."
     fi
 
+    # Cari path cloudflared
+    local CF_BIN
+    if $IS_TERMUX; then
+        CF_BIN="$PREFIX/bin/cloudflared"
+    else
+        CF_BIN="$(command -v cloudflared)"
+    fi
+    [ -z "$CF_BIN" ] && CF_BIN="cloudflared"
+
     echo ""
     read -rp "  Masukkan domain (contoh: amprem.example.com): " DOMAIN
     DOMAIN=$(echo "$DOMAIN" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
@@ -589,22 +612,40 @@ deploy_cf_named() {
 
     echo ""
     info "Login ke Cloudflare..."
-    cloudflared tunnel login || warn "Login dibatalkan atau gagal."
+    if $IS_TERMUX; then
+        PATH="$PREFIX/bin:$PATH" "$CF_BIN" tunnel login || warn "Login dibatalkan atau gagal."
+    else
+        "$CF_BIN" tunnel login || warn "Login dibatalkan atau gagal."
+    fi
 
     start_server 8080
 
     local TUNNEL_NAME="amprem-web"
-    pkill -f "cloudflared" 2>/dev/null || true
-    cloudflared tunnel delete "$TUNNEL_NAME" 2>/dev/null || true
-    cloudflared tunnel create "$TUNNEL_NAME" > /dev/null 2>&1
 
-    local TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
-    [ -z "$TUNNEL_ID" ] && fail "Gagal buat tunnel. Pastikan sudah login."
+    mkdir -p /tmp
+    pkill -f "cloudflared" 2>/dev/null || true
 
     if $IS_TERMUX; then
-        local CF_DIR="$HOME/.cloudflared"
+        PATH="$PREFIX/bin:$PATH" "$CF_BIN" tunnel delete "$TUNNEL_NAME" 2>/dev/null || true
+        PATH="$PREFIX/bin:$PATH" "$CF_BIN" tunnel create "$TUNNEL_NAME" > /dev/null 2>&1
     else
-        local CF_DIR="/etc/cloudflared"
+        "$CF_BIN" tunnel delete "$TUNNEL_NAME" 2>/dev/null || true
+        "$CF_BIN" tunnel create "$TUNNEL_NAME" > /dev/null 2>&1
+    fi
+
+    local TUNNEL_ID
+    if $IS_TERMUX; then
+        TUNNEL_ID=$(PATH="$PREFIX/bin:$PATH" "$CF_BIN" tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+    else
+        TUNNEL_ID=$("$CF_BIN" tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+    fi
+    [ -z "$TUNNEL_ID" ] && fail "Gagal buat tunnel. Pastikan sudah login."
+
+    local CF_DIR
+    if $IS_TERMUX; then
+        CF_DIR="$HOME/.cloudflared"
+    else
+        CF_DIR="/etc/cloudflared"
     fi
     mkdir -p "$CF_DIR"
     cat > "$CF_DIR/config.yml" <<EOF
@@ -616,8 +657,13 @@ ingress:
   - service: http_status:404
 EOF
 
-    cloudflared tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
-    nohup cloudflared tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
+    if $IS_TERMUX; then
+        PATH="$PREFIX/bin:$PATH" "$CF_BIN" tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
+        PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
+    else
+        "$CF_BIN" tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
+        nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
+    fi
     sleep 5
 
     sep
@@ -1000,25 +1046,31 @@ deploy_vps_cf_domain() {
     DOMAIN=$(echo "$DOMAIN" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
     [ -z "$DOMAIN" ] && fail "Domain tidak boleh kosong."
 
-    if ! command -v cloudflared &>/dev/null; then
+    local CF_BIN
+    CF_BIN="$(command -v cloudflared)"
+    if [ -z "$CF_BIN" ]; then
         local ARCH=$(uname -m)
         case "$ARCH" in x86_64|amd64) ARCH="amd64" ;; aarch64|arm64) ARCH="arm64" ;; *) ARCH="arm" ;; esac
         curl -sL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${ARCH}" -o /usr/local/bin/cloudflared
         chmod +x /usr/local/bin/cloudflared
+        CF_BIN="/usr/local/bin/cloudflared"
     fi
 
     echo ""
     info "Login ke Cloudflare..."
-    cloudflared tunnel login || warn "Login dibatalkan."
+    "$CF_BIN" tunnel login || warn "Login dibatalkan."
 
     start_server 3000
 
     local TUNNEL_NAME="amprem-web"
-    pkill -f "cloudflared" 2>/dev/null || true
-    cloudflared tunnel delete "$TUNNEL_NAME" 2>/dev/null || true
-    cloudflared tunnel create "$TUNNEL_NAME" > /dev/null 2>&1
 
-    local TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+    mkdir -p /tmp
+    pkill -f "cloudflared" 2>/dev/null || true
+    "$CF_BIN" tunnel delete "$TUNNEL_NAME" 2>/dev/null || true
+    "$CF_BIN" tunnel create "$TUNNEL_NAME" > /dev/null 2>&1
+
+    local TUNNEL_ID
+    TUNNEL_ID=$("$CF_BIN" tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
     [ -z "$TUNNEL_ID" ] && fail "Gagal buat tunnel."
 
     mkdir -p /etc/cloudflared
@@ -1031,8 +1083,8 @@ ingress:
   - service: http_status:404
 EOF
 
-    cloudflared tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
-    nohup cloudflared tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
+    "$CF_BIN" tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
+    nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
     sleep 5
 
     sep
