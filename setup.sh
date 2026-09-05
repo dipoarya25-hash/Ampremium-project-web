@@ -198,7 +198,6 @@ check_status() {
 # ============================================================
 manage_services() {
     local SUBCHOICE
-    manage_services_loop:
     while true; do
         sep
         info "Kelola Service"
@@ -349,7 +348,6 @@ manage_services() {
         local TARGET_URL="${SVC_URLS[$IDX]}"
 
         # Sub-menu untuk service ini
-        svc_action_loop:
         while true; do
             sep
             echo -e "  ${GREEN}${TARGET_NAME}${NC}"
