@@ -8,18 +8,20 @@
  * cuma butuh Node.js >= 18.
  */
 
+import 'dotenv/config'
 import express from 'express'
 import path from 'path'
 import os from 'os'
 import { fileURLToPath } from 'url'
 import { config } from './config.js'
+import { mountAuth } from './auth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3000
 
 app.use(express.json())
-app.use(express.static(path.join(__dirname, 'public')))
+const auth = mountAuth(app, path.join(__dirname, 'public'))
 
 // ---------- Helper bersama ----------
 
@@ -335,7 +337,9 @@ app.post('/api/amprem7/verify', async (req, res) => {
   }
 })
 
-const HOST = process.env.HOST || '0.0.0.0'
+app.use(express.static(path.join(__dirname, 'public')))
+
+
 
 // ---------- Global error handler supaya server gak crash ----------
 process.on('uncaughtException', (err) => {
@@ -358,11 +362,13 @@ function getLocalIP() {
   return null
 }
 
-app.listen(PORT, HOST, () => {
+
+const HOST = process.env.HOST || '127.0.0.1'
+
+if (!process.env.VERCEL) app.listen(PORT, HOST, () => {
   const localIP = HOST === '0.0.0.0' ? getLocalIP() : null
-  console.log(`🌐 Amprem Web jalan di:`)
-  console.log(`   Lokal:    http://localhost:${PORT}`)
-  if (localIP) {
-    console.log(`   Jaringan: http://${localIP}:${PORT}`)
-  }
+  console.log(`Amprem Web jalan di: http://localhost:${PORT}`)
+  if (localIP) console.log(`Jaringan: http://${localIP}:${PORT}`)
 })
+
+export default app

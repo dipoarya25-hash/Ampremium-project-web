@@ -747,3 +747,11 @@ VPS (SERVER LINUX)
 ---
 
 Repo: **https://github.com/yowbxz/amprem-web**
+
+---
+
+## Login pengguna
+
+Semua halaman web pengguna membutuhkan username dan password yang dibuat dari proyek admin terpisah. Gunakan project Supabase yang sama pada kedua web.
+
+Untuk deployment Vercel, isi `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, dan `SUPABASE_SERVICE_ROLE_KEY` melalui Environment Variables Vercel; jangan pernah memasukkan nilai rahasia ke repository.

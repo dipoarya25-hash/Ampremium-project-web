@@ -147,3 +147,22 @@ function renderSuccessCard(container, info) {
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountBottomNav)
 else mountBottomNav()
+
+// Status akun ditampilkan setelah halaman dashboard berhasil lolos autentikasi.
+async function mountAccountMenu() {
+  try {
+    const response = await fetch('/api/auth/me')
+    const data = await response.json()
+    if (!response.ok || !data.user) return
+    const menu = document.createElement('div')
+    menu.className = 'account-menu'
+    menu.innerHTML = `<span>Masuk sebagai <strong>${data.user.username}</strong></span>${data.user.isAdmin ? '<a href="admin.html">Admin</a>' : ''}<button type="button">Keluar</button>`
+    menu.querySelector('button').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      location.href = '/login'
+    })
+    document.body.appendChild(menu)
+  } catch {}
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountAccountMenu)
+else mountAccountMenu()
