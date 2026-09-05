@@ -61,67 +61,125 @@ get_public_ip() {
 }
 
 # ============================================================
-#  CHECK STATUS
+#  FORMAT UPTIME (dari PID)
+# ============================================================
+format_uptime() {
+    local PID=$1
+    local UPTIME_TICK
+    UPTIME_TICK=$(ps -o etimes= -p "$PID" 2>/dev/null | tr -d ' ' || echo "0")
+    [ -z "$UPTIME_TICK" ] && UPTIME_TICK=0
+
+    local SEC=$((UPTIME_TICK % 60))
+    local MIN=$((UPTIME_TICK / 60 % 60))
+    local HOUR=$((UPTIME_TICK / 3600 % 24))
+    local DAY=$((UPTIME_TICK / 86400))
+
+    if [ "$DAY" -gt 0 ]; then
+        echo "${DAY}d ${HOUR}h ${MIN}m ${SEC}s"
+    elif [ "$HOUR" -gt 0 ]; then
+        echo "${HOUR}h ${MIN}m ${SEC}s"
+    elif [ "$MIN" -gt 0 ]; then
+        echo "${MIN}m ${SEC}s"
+    else
+        echo "${SEC}s"
+    fi
+}
+
+# ============================================================
+#  GET SERVICE INFO (return: TYPE|PID|UPTIME|URL)
+# ============================================================
+get_service_pid() {
+    local PATTERN=$1
+    pgrep -f "$PATTERN" 2>/dev/null | head -1
+}
+
+# ============================================================
+#  CHECK STATUS (ringkas - dipanggil dari menu utama)
 # ============================================================
 check_status() {
     sep
     info "Status Server"
+    echo ""
 
-    # Node server
-    if pgrep -f "server.js" > /dev/null; then
-        local PID=$(pgrep -f "server.js" | head -1)
-        # ss tidak ada di Termux, coba lsof atau netstat
-        local PORT
+    local ANY=0
+
+    # --- Node server ---
+    local SERVER_PID=$(get_service_pid "server.js")
+    if [ -n "$SERVER_PID" ]; then
+        ANY=1
+        local UPTIME=$(format_uptime "$SERVER_PID")
+        local PORT="?"
         if command -v ss &>/dev/null; then
-            PORT=$(ss -tlnp 2>/dev/null | grep "$PID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
-        elif command -v netstat &>/dev/null; then
-            PORT=$(netstat -tlnp 2>/dev/null | grep "$PID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
-        else
-            PORT="?"
+            PORT=$(ss -tlnp 2>/dev/null | grep "$SERVER_PID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
+        elif command -v lsof &>/dev/null; then
+            PORT=$(lsof -i -a -p "$SERVER_PID" 2>/dev/null | grep -oP ':\K[0-9]+' | grep -vE '^[0-9]{2,5}$' | head -1 || echo "?")
         fi
-        local UPTIME=$(ps -o etime= -p "$PID" 2>/dev/null | xargs || echo "?")
-        echo "  ${GREEN}[ONLINE]${NC}  Node.js server - PID $PID, Port ${PORT:-?}, Uptime: $UPTIME"
+        echo -e "  ${GREEN}[ON]${NC}   Node.js server  PID:$SERVER_PID  Port:$PORT  Uptime: $UPTIME"
     else
-        echo "  ${RED}[OFFLINE]${NC}  Node.js server tidak jalan"
+        echo -e "  ${RED}[OFF]${NC}  Node.js server"
     fi
 
-    # Tunnel
-    if pgrep -f "cloudflared" > /dev/null; then
-        local TUNNEL_PID=$(pgrep -f "cloudflared" | head -1)
-        local TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' /tmp/amprem-tunnel.log 2>/dev/null | tail -1 || echo "?")
-        echo "  ${GREEN}[ONLINE]${NC}  Cloudflare Tunnel - PID $TUNNEL_PID"
-        if [ "$TUNNEL_URL" != "?" ]; then
-            echo "              URL: $TUNNEL_URL"
-        fi
-    elif pgrep -f "ngrok" > /dev/null; then
-        local NGROK_PID=$(pgrep -f "ngrok" | head -1)
-        echo "  ${GREEN}[ONLINE]${NC}  Ngrok - PID $NGROK_PID"
+    # --- Cloudflare ---
+    local CF_PID=$(get_service_pid "cloudflared")
+    if [ -n "$CF_PID" ]; then
+        ANY=1
+        local UPTIME=$(format_uptime "$CF_PID")
+        local CF_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' /tmp/amprem-tunnel.log 2>/dev/null | tail -1 || echo "?")
+        echo -e "  ${GREEN}[ON]${NC}   Cloudflare Tunnel  PID:$CF_PID  Uptime: $UPTIME"
+        [ "$CF_URL" != "?" ] && echo "         URL: $CF_URL"
+    fi
+
+    # --- Ngrok ---
+    local NGROK_PID=$(get_service_pid "ngrok")
+    if [ -n "$NGROK_PID" ]; then
+        ANY=1
+        local UPTIME=$(format_uptime "$NGROK_PID")
         local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1 || echo "?")
-        if [ "$NGROK_URL" != "?" ]; then
-            echo "              URL: $NGROK_URL"
-        fi
-    elif pgrep -f "localtunnel" > /dev/null; then
-        echo "  ${GREEN}[ONLINE]${NC}  LocalTunnel aktif"
-        local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1 || echo "?")
-        if [ "$LT_URL" != "?" ]; then
-            echo "              URL: $LT_URL"
-        fi
-    elif pgrep -f "pagekite" > /dev/null; then
-        echo "  ${GREEN}[ONLINE]${NC}  Pagekite aktif"
-    elif pgrep -f "serveo" > /dev/null; then
-        echo "  ${GREEN}[ONLINE]${NC}  Serveo SSH Tunnel aktif"
-    else
-        echo "  ${YELLOW}[NONE]${NC}   Tidak ada tunnel aktif"
+        echo -e "  ${GREEN}[ON]${NC}   Ngrok  PID:$NGROK_PID  Uptime: $UPTIME"
+        [ "$NGROK_URL" != "?" ] && echo "         URL: $NGROK_URL"
     fi
 
-    # Nginx (VPS only)
+    # --- LocalTunnel ---
+    local LT_PID=$(get_service_pid "localtunnel")
+    if [ -n "$LT_PID" ]; then
+        ANY=1
+        local UPTIME=$(format_uptime "$LT_PID")
+        local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1 || echo "?")
+        echo -e "  ${GREEN}[ON]${NC}   LocalTunnel  PID:$LT_PID  Uptime: $UPTIME"
+        [ "$LT_URL" != "?" ] && echo "         URL: $LT_URL"
+    fi
+
+    # --- Pagekite ---
+    local PK_PID=$(get_service_pid "pagekite")
+    if [ -n "$PK_PID" ]; then
+        ANY=1
+        local UPTIME=$(format_uptime "$PK_PID")
+        local PK_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.pagekite\.me' /tmp/amprem-pk.log 2>/dev/null | tail -1 || echo "?")
+        echo -e "  ${GREEN}[ON]${NC}   Pagekite  PID:$PK_PID  Uptime: $UPTIME"
+        [ "$PK_URL" != "?" ] && echo "         URL: $PK_URL"
+    fi
+
+    # --- Serveo ---
+    local SERVEO_PID=$(get_service_pid "serveo")
+    if [ -n "$SERVEO_PID" ]; then
+        ANY=1
+        local UPTIME=$(format_uptime "$SERVEO_PID")
+        local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1 || echo "?")
+        echo -e "  ${GREEN}[ON]${NC}   Serveo  PID:$SERVEO_PID  Uptime: $UPTIME"
+        [ "$SERVEO_URL" != "?" ] && echo "         URL: $SERVEO_URL"
+    fi
+
+    # --- Nginx (VPS) ---
     if ! $IS_TERMUX && command -v nginx &>/dev/null; then
         if systemctl is-active --quiet nginx 2>/dev/null; then
-            echo "  ${GREEN}[ONLINE]${NC}  Nginx reverse proxy aktif"
-        else
-            echo "  ${YELLOW}[STOPPED]${NC} Nginx tidak aktif"
+            ANY=1
+            local NGX_PID=$(systemctl show --property MainPID --value nginx 2>/dev/null | tr -d ' ')
+            [ "$NGX_PID" = "0" ] && NGX_PID="?"
+            echo -e "  ${GREEN}[ON]${NC}   Nginx reverse proxy  PID:$NGX_PID"
         fi
     fi
+
+    [ "$ANY" = "0" ] && echo -e "  ${YELLOW}  Tidak ada service yang jalan${NC}"
 
     echo ""
     local LOCAL_IP=$(get_local_ip)
@@ -133,6 +191,329 @@ check_status() {
     if [ -n "$LOCAL_IP" ]; then
         echo "  Akses WiFi: http://${LOCAL_IP}:3000"
     fi
+}
+
+# ============================================================
+#  MANAGE SERVICES - stop / restart / log per service
+# ============================================================
+manage_services() {
+    local SUBCHOICE
+    manage_services_loop:
+    while true; do
+        sep
+        info "Kelola Service"
+        echo ""
+
+        # Collect running services
+        declare -a SVC_PIDS
+        declare -a SVC_NAMES
+        declare -a SVC_PATTERNS
+        declare -a SVC_URLS
+        declare -a SVC_LOGFILES
+        declare -a SVC_RESTART_CMD
+        declare -a SVC_PORTS
+        local COUNT=0
+
+        # Node server
+        local SPID=$(get_service_pid "server.js")
+        if [ -n "$SPID" ]; then
+            local PORT="?"
+            if command -v ss &>/dev/null; then
+                PORT=$(ss -tlnp 2>/dev/null | grep "$SPID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
+            elif command -v lsof &>/dev/null; then
+                PORT=$(lsof -i -a -p "$SPID" 2>/dev/null | grep -oP ':\K[0-9]+' | grep -vE '^[0-9]{2,5}$' | head -1 || echo "?")
+            fi
+            COUNT=$((COUNT+1))
+            SVC_PIDS+=("$SPID")
+            SVC_NAMES+=("Node.js Server")
+            SVC_PATTERNS+=("server.js")
+            SVC_URLS+=("http://localhost:${PORT:-3000}")
+            SVC_LOGFILES+=("/tmp/amprem.log")
+            SVC_RESTART_CMD+=("start_server ${PORT:-8080}")
+            SVC_PORTS+=("${PORT:-?}")
+        fi
+
+        # Cloudflare
+        local CFPID=$(get_service_pid "cloudflared")
+        if [ -n "$CFPID" ]; then
+            local CF_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' /tmp/amprem-tunnel.log 2>/dev/null | tail -1 || echo '-')
+            COUNT=$((COUNT+1))
+            SVC_PIDS+=("$CFPID")
+            SVC_NAMES+=("Cloudflare Tunnel")
+            SVC_PATTERNS+=("cloudflared")
+            SVC_URLS+=("$CF_URL")
+            SVC_LOGFILES+=("/tmp/amprem-tunnel.log")
+            SVC_RESTART_CMD+=("pkill -f cloudflared; sleep 1; $CF_BIN tunnel --url http://localhost:8080 > /tmp/amprem-tunnel.log 2>&1 &")
+            SVC_PORTS+=("-")
+        fi
+
+        # Ngrok
+        local NPID=$(get_service_pid "ngrok")
+        if [ -n "$NPID" ]; then
+            local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1 || echo '-')
+            COUNT=$((COUNT+1))
+            SVC_PIDS+=("$NPID")
+            SVC_NAMES+=("Ngrok")
+            SVC_PATTERNS+=("ngrok")
+            SVC_URLS+=("$NGROK_URL")
+            SVC_LOGFILES+=("/tmp/amprem-ngrok.log")
+            SVC_RESTART_CMD+=("pkill -f ngrok; sleep 1; $NGROK_BIN http 8080 > /tmp/amprem-ngrok.log 2>&1 &")
+            SVC_PORTS+=("-")
+        fi
+
+        # LocalTunnel
+        local LTPID=$(get_service_pid "localtunnel")
+        if [ -n "$LTPID" ]; then
+            local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1 || echo '-')
+            COUNT=$((COUNT+1))
+            SVC_PIDS+=("$LTPID")
+            SVC_NAMES+=("LocalTunnel")
+            SVC_PATTERNS+=("localtunnel")
+            SVC_URLS+=("$LT_URL")
+            SVC_LOGFILES+=("/tmp/amprem-lt.log")
+            SVC_RESTART_CMD+=("pkill -f localtunnel; sleep 1; $LT_BIN --port 8080 > /tmp/amprem-lt.log 2>&1 &")
+            SVC_PORTS+=("-")
+        fi
+
+        # Pagekite
+        local PKPID=$(get_service_pid "pagekite")
+        if [ -n "$PKPID" ]; then
+            local PK_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.pagekite\.me' /tmp/amprem-pk.log 2>/dev/null | tail -1 || echo '-')
+            COUNT=$((COUNT+1))
+            SVC_PIDS+=("$PKPID")
+            SVC_NAMES+=("Pagekite")
+            SVC_PATTERNS+=("pagekite")
+            SVC_URLS+=("$PK_URL")
+            SVC_LOGFILES+=("/tmp/amprem-pk.log")
+            SVC_RESTART_CMD+=("pkill -f pagekite; sleep 1; $PK_BIN 8080 :8080 > /tmp/amprem-pk.log 2>&1 &")
+            SVC_PORTS+=("-")
+        fi
+
+        # Serveo
+        local SVPID=$(get_service_pid "serveo")
+        if [ -n "$SVPID" ]; then
+            local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1 || echo '-')
+            COUNT=$((COUNT+1))
+            SVC_PIDS+=("$SVPID")
+            SVC_NAMES+=("Serveo")
+            SVC_PATTERNS+=("serveo")
+            SVC_URLS+=("$SERVEO_URL")
+            SVC_LOGFILES+=("/tmp/amprem-serveo.log")
+            SVC_RESTART_CMD+=("pkill -f serveo; sleep 1; setsid ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net > /tmp/amprem-serveo.log 2>&1 &")
+            SVC_PORTS+=("-")
+        fi
+
+        if [ "$COUNT" = "0" ]; then
+            echo -e "  ${YELLOW}Tidak ada service yang jalan.${NC}"
+            echo "  Jalankan deployment dulu untuk memulai service."
+            echo ""
+            return
+        fi
+
+        # Tampilkan daftar service
+        echo "  Service yang sedang jalan:"
+        echo ""
+        for i in $(seq 0 $((COUNT-1))); do
+            local NUM=$((i+1))
+            local NAME="${SVC_NAMES[$i]}"
+            local PID="${SVC_PIDS[$i]}"
+            local UPTIME=$(format_uptime "$PID")
+            local URL="${SVC_URLS[$i]}"
+            local PORT="${SVC_PORTS[$i]}"
+            echo -e "  ${GREEN}[$NUM]${NC} $NAME"
+            echo "      PID: $PID | Uptime: $UPTIME"
+            [ "$PORT" != "-" ] && [ "$PORT" != "?" ] && echo "      Port: $PORT"
+            [ "$URL" != "-" ] && [ "$URL" != "?" ] && echo "      URL: $URL"
+        done
+        echo ""
+        echo -e "  ${YELLOW}[0]${NC} Kembali ke menu"
+
+        echo ""
+        read -rp "  Pilih service [0-$COUNT]: " PILIH_SVC
+
+        if [ "$PILIH_SVC" = "0" ] || [ -z "$PILIH_SVC" ]; then
+            return
+        fi
+
+        if ! [[ "$PILIH_SVC" =~ ^[0-9]+$ ]] || [ "$PILIH_SVC" -lt 1 ] || [ "$PILIH_SVC" -gt "$COUNT" ]; then
+            warn "Pilihan tidak valid."
+            continue
+        fi
+
+        local IDX=$((PILIH_SVC-1))
+        local TARGET_NAME="${SVC_NAMES[$IDX]}"
+        local TARGET_PATTERN="${SVC_PATTERNS[$IDX]}"
+        local TARGET_LOG="${SVC_LOGFILES[$IDX]}"
+        local TARGET_PID="${SVC_PIDS[$IDX]}"
+        local TARGET_UPTIME=$(format_uptime "$TARGET_PID")
+        local TARGET_URL="${SVC_URLS[$IDX]}"
+
+        # Sub-menu untuk service ini
+        svc_action_loop:
+        while true; do
+            sep
+            echo -e "  ${GREEN}${TARGET_NAME}${NC}"
+            echo ""
+            echo "    PID     : $TARGET_PID"
+            echo "    Uptime  : $TARGET_UPTIME"
+            [ "$TARGET_URL" != "-" ] && [ "$TARGET_URL" != "?" ] && echo "    URL     : $TARGET_URL"
+            echo ""
+            echo "  Aksi:"
+            echo -e "    ${GREEN}[1]${NC} Stop      - Hentikan service ini"
+            echo -e "    ${GREEN}[2]${NC} Restart   - Stop lalu start ulang"
+            echo -e "    ${GREEN}[3]${NC} Log       - Lihat log (tail -30)"
+            echo -e "    ${GREEN}[4]${NC} Full Log  - Lihat semua log"
+            echo -e "    ${YELLOW}[0]${NC} Kembali"
+            echo ""
+            read -rp "  Pilih aksi [0-4]: " SUBCHOICE
+
+            case "$SUBCHOICE" in
+                1)  # Stop
+                    echo ""
+                    echo -e "  Hentikan ${YELLOW}${TARGET_NAME}${NC} (PID: $TARGET_PID)?"
+                    read -rp "  Yakin? [y/N]: " KONFIRM
+                    if [[ "$KONFIRM" =~ ^[Yy]$ ]]; then
+                        mkdir -p /tmp
+                        if pkill -f "$TARGET_PATTERN" 2>/dev/null; then
+                            sleep 1
+                            # Verifikasi benar-benar berhenti
+                            if get_service_pid "$TARGET_PATTERN" > /dev/null 2>&1; then
+                                warn "$TARGET_NAME masih jalan, coba kill -9..."
+                                pkill -9 -f "$TARGET_PATTERN" 2>/dev/null
+                            fi
+                            ok "$TARGET_NAME berhasil dihentikan."
+                        else
+                            warn "$TARGET_NAME sudah berhenti."
+                        fi
+                    else
+                        echo "  Dibatalkan."
+                    fi
+                    echo ""
+                    break
+                    ;;
+                2)  # Restart
+                    echo ""
+                    echo -e "  Restart ${YELLOW}${TARGET_NAME}${NC}?"
+                    read -rp "  Yakin? [y/N]: " KONFIRM
+                    if [[ "$KONFIRM" =~ ^[Yy]$ ]]; then
+                        mkdir -p /tmp
+                        echo "  Menghentikan $TARGET_NAME..."
+                        pkill -f "$TARGET_PATTERN" 2>/dev/null
+                        sleep 2
+                        echo "  Memulai ulang..."
+                        if [ "$TARGET_NAME" = "Node.js Server" ]; then
+                            local TARGET_PORT="${SVC_PORTS[$IDX]}"
+                            local RESTART_PORT="${TARGET_PORT:-8080}"
+                            [ "$RESTART_PORT" = "?" ] && RESTART_PORT=8080
+                            # Cek apakah port bebas
+                            if command -v ss &>/dev/null; then
+                                if ss -ltn 2>/dev/null | grep -q ":${RESTART_PORT} "; then
+                                    warn "Port $RESTART_PORT sudah dipakai. Server tidak bisa restart."
+                                    break
+                                fi
+                            fi
+                            cd "$SCRIPT_DIR"
+                            local NODE_BIN
+                            if $IS_TERMUX; then
+                                NODE_BIN="$PREFIX/bin/node"
+                            else
+                                NODE_BIN="$(command -v node)"
+                            fi
+                            [ -z "$NODE_BIN" ] && warn "Node.js tidak ditemukan." && break
+                            PORT=$RESTART_PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > /tmp/amprem.log 2>&1 &
+                            sleep 3
+                            if kill -0 $! 2>/dev/null; then
+                                local NEW_PID=$!
+                                ok "$TARGET_NAME restart berhasil (PID: $NEW_PID)"
+                            else
+                                warn "Gagal restart. Cek: cat /tmp/amprem.log"
+                            fi
+                        else
+                            # Tunnel lain - restart via nohup
+                            case "$TARGET_NAME" in
+                                "Cloudflare Tunnel")
+                                    local CF_BIN
+                                    $IS_TERMUX && CF_BIN="$PREFIX/bin/cloudflared" || CF_BIN="$(command -v cloudflared)"
+                                    [ -z "$CF_BIN" ] && CF_BIN="cloudflared"
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel --url http://localhost:8080 > /tmp/amprem-tunnel.log 2>&1 &
+                                    sleep 5
+                                    local NEW_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/amprem-tunnel.log 2>/dev/null | tail -1)
+                                    [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "Tunnel restart (cek log untuk URL)"
+                                    ;;
+                                "Ngrok")
+                                    local NGROK_BIN
+                                    $IS_TERMUX && NGROK_BIN="$PREFIX/bin/ngrok" || NGROK_BIN="$(command -v ngrok)"
+                                    [ -z "$NGROK_BIN" ] && NGROK_BIN="ngrok"
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$NGROK_BIN" http 8080 > /tmp/amprem-ngrok.log 2>&1 &
+                                    sleep 5
+                                    local NEW_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1)
+                                    [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "Ngrok restart (cek log untuk URL)"
+                                    ;;
+                                "LocalTunnel")
+                                    local LT_BIN
+                                    $IS_TERMUX && LT_BIN="$PREFIX/bin/lt" || LT_BIN="$(command -v lt)"
+                                    [ -z "$LT_BIN" ] && LT_BIN="lt"
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$LT_BIN" --port 8080 > /tmp/amprem-lt.log 2>&1 &
+                                    sleep 10
+                                    local NEW_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1)
+                                    [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "LocalTunnel restart (cek log untuk URL)"
+                                    ;;
+                                "Pagekite")
+                                    local PK_BIN
+                                    $IS_TERMUX && PK_BIN="$PREFIX/bin/pagekite" || PK_BIN="$(command -v pagekite)"
+                                    [ -z "$PK_BIN" ] && PK_BIN="pagekite"
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$PK_BIN" 8080 :8080 > /tmp/amprem-pk.log 2>&1 &
+                                    sleep 5
+                                    ok "Pagekite restart (cek log untuk URL)"
+                                    ;;
+                                "Serveo")
+                                    $IS_TERMUX && local SSH_BIN="$PREFIX/bin/ssh" || local SSH_BIN="$(command -v ssh)"
+                                    setsid $SSH_BIN -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net > /tmp/amprem-serveo.log 2>&1 &
+                                    sleep 8
+                                    local NEW_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1)
+                                    [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "Serveo restart (cek log untuk URL)"
+                                    ;;
+                            esac
+                        fi
+                    else
+                        echo "  Dibatalkan."
+                    fi
+                    echo ""
+                    break
+                    ;;
+                3)  # Log tail
+                    echo ""
+                    if [ -f "$TARGET_LOG" ]; then
+                        echo -e "  ${YELLOW}=== Log: $TARGET_LOG (30 baris terakhir) ===${NC}"
+                        echo ""
+                        tail -30 "$TARGET_LOG"
+                    else
+                        warn "Log tidak ditemukan: $TARGET_LOG"
+                    fi
+                    echo ""
+                    echo -e "  ${YELLOW}[Enter]${NC} Kembali"
+                    read -r ENTER
+                    ;;
+                4)  # Full log
+                    echo ""
+                    if [ -f "$TARGET_LOG" ]; then
+                        echo -e "  ${YELLOW}=== Full Log: $TARGET_LOG ===${NC}"
+                        echo ""
+                        cat "$TARGET_LOG"
+                        echo ""
+                    else
+                        warn "Log tidak ditemukan: $TARGET_LOG"
+                        echo ""
+                    fi
+                    echo -e "  ${YELLOW}[Enter]${NC} Kembali"
+                    read -r ENTER
+                    ;;
+                0|*)
+                    break
+                    ;;
+            esac
+        done
+    done
 }
 
 # ============================================================
@@ -335,13 +716,13 @@ deploy_menu() {
         echo "    9) Domain + Cloudflare Proxy - https://domain.com (serve langsung)"
         echo ""
         echo "  KELOLA:"
-        echo "    S) Status           - Cek service yang jalan"
+        echo "    S) Cek Status     - Lihat service yang jalan"
+        echo "    M) Kelola        - Hentikan service tertentu"
         echo "    R) Restart Server   - Restart Node.js server"
-        echo "    X) Stop Semua      - Hentikan semua service"
         echo "    E) Edit Config     - Edit config.js"
         echo "    0) Kembali"
         echo ""
-        read -rp "  Pilih [1-9/S/R/X/E/0]: " PILIH
+        read -rp "  Pilih [1-9/S/M/R/E/0]: " PILIH
 
         case "$PILIH" in
             1) deploy_localhost ;;
@@ -353,9 +734,9 @@ deploy_menu() {
             7) deploy_pagekite ;;
             8) deploy_serveo ;;
             9) deploy_domain ;;
-            S|s) check_status; deploy_menu ;;
+            S|s) check_status; echo ""; read -rp "  Tekan Enter untuk kembali..." ENTER; deploy_menu ;;
+            M|m) check_status; echo ""; manage_services; echo ""; read -rp "  Tekan Enter untuk kembali..." ENTER; deploy_menu ;;
             R|r) start_server 8080; deploy_menu ;;
-            X|x) stop_all; deploy_menu ;;
             E|e) edit_config; deploy_menu ;;
             0|*) return ;;
         esac
@@ -377,14 +758,14 @@ deploy_menu() {
         echo "    8) Serveo           - URL subdomain.serveo.net (via SSH)"
         echo ""
         echo "  KELOLA:"
-        echo "    S) Status           - Cek service yang jalan"
+        echo "    S) Cek Status     - Lihat service yang jalan"
+        echo "    M) Kelola        - Hentikan service tertentu"
         echo "    R) Restart Server   - Restart Node.js server"
-        echo "    X) Stop Semua      - Hentikan semua service"
         echo "    E) Edit Config     - Edit config.js"
         echo "    N) Nginx Status    - Cek Nginx"
         echo "    0) Kembali"
         echo ""
-        read -rp "  Pilih [1-8/S/R/X/E/N/0]: " PILIH
+        read -rp "  Pilih [1-8/S/M/R/E/N/0]: " PILIH
 
         case "$PILIH" in
             1) deploy_vps_ip ;;
@@ -395,9 +776,9 @@ deploy_menu() {
             6) deploy_cf_named ;;
             7) deploy_localtunnel ;;
             8) deploy_serveo ;;
-            S|s) check_status; deploy_menu ;;
+            S|s) check_status; echo ""; read -rp "  Tekan Enter untuk kembali..." ENTER; deploy_menu ;;
+            M|m) check_status; echo ""; manage_services; echo ""; read -rp "  Tekan Enter untuk kembali..." ENTER; deploy_menu ;;
             R|r) start_server 3000; deploy_menu ;;
-            X|x) stop_all; deploy_menu ;;
             E|e) edit_config; deploy_menu ;;
             N|n) nginx_status; deploy_menu ;;
             0|*) return ;;
@@ -1140,6 +1521,7 @@ main_menu() {
     echo "    P) Project        - Install npm project"
     echo "    D) Deployment     - Pilih cara akses internet"
     echo "    C) Cek Status     - Lihat service yang jalan"
+    echo "    M) Kelola         - Hentikan service tertentu"
     echo "    R) Restart       - Restart server"
     echo "    X) Stop Semua    - Hentikan semua service"
     echo "    E) Edit Config   - Edit config.js"
@@ -1151,7 +1533,8 @@ main_menu() {
         I|i) install_deps; main_menu ;;
         P|p) install_project; main_menu ;;
         D|d) deploy_menu ;;
-        C|c) check_status; main_menu ;;
+        C|c) check_status; echo ""; read -rp "  Tekan Enter untuk kembali..." ENTER; main_menu ;;
+        M|m) check_status; echo ""; manage_services; echo ""; read -rp "  Tekan Enter untuk kembali..." ENTER; main_menu ;;
         R|r) start_server 8080; main_menu ;;
         X|x) stop_all; main_menu ;;
         E|e) edit_config; main_menu ;;
