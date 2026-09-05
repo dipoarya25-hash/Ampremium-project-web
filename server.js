@@ -241,7 +241,18 @@ function findMailValue(source, names) {
 }
 
 function extractSafeLinks(...values) {
-  const matches = values.flatMap((value) => String(value || '').match(/https?:\/\/[^\s"'<>]+/g) || [])
+  const matches = []
+  const queue = [...values]
+  const seen = new Set()
+  while (queue.length) {
+    const value = queue.shift()
+    if (typeof value === 'string') {
+      matches.push(...(value.match(/https?:\/\/[^\s"'<>]+/g) || []))
+    } else if (value && typeof value === 'object' && !seen.has(value)) {
+      seen.add(value)
+      queue.push(...Object.values(value))
+    }
+  }
   return [...new Set(matches.map((url) => url.replace(/[),.;]+$/, '')).filter((url) => {
     try { return ['http:', 'https:'].includes(new URL(url).protocol) } catch { return false }
   }))].slice(0, 12)
@@ -274,7 +285,8 @@ app.post('/api/inbox/preview', async (req, res) => {
         subject: findMailValue(message, ['subject', 'title', 'mail_subject']) || '(Tanpa subjek)',
         text,
         html,
-        links: extractSafeLinks(html, text)
+        // AZBry dapat menaruh URL pada properti terpisah dari body email.
+        links: extractSafeLinks(message, html, text)
       }
     })
     console.log(`[INBOX] mailbox memuat ${mails.length} pesan dari AZBry`)
