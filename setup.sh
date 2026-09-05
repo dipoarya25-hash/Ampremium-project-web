@@ -20,6 +20,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IS_TERMUX=false
 [ -d "/data/data/com.termux" ] && IS_TERMUX=true
 
+# Direktori log - pakai $HOME/.amprem supaya work di Termux Android 11+
+# (/tmp di Android 11+ read-only)
+AMPREM_TMP="$HOME/.amprem"
+mkdir -p "$AMPREM_TMP"
+
 # ---------- Helpers ----------
 info()  { echo -e "${CYAN}[INFO]${NC} $1"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
@@ -118,7 +123,7 @@ check_status() {
         fi
         # Fallback: parse dari log server
         if [ "$PORT" = "?" ] || [ -z "$PORT" ]; then
-            local LOG_PORT=$(grep -oP 'localhost:\K[0-9]+' /tmp/amprem.log 2>/dev/null | head -1)
+            local LOG_PORT=$(grep -oP 'localhost:\K[0-9]+' $AMPREM_TMP/amprem.log 2>/dev/null | head -1)
             [ -n "$LOG_PORT" ] && PORT="$LOG_PORT"
         fi
         echo -e "  ${GREEN}[ON]${NC}   Node.js server  PID:$SERVER_PID  Port:$PORT  Uptime: $UPTIME"
@@ -131,7 +136,7 @@ check_status() {
     if [ -n "$CF_PID" ]; then
         ANY=1
         local UPTIME=$(format_uptime "$CF_PID")
-        local CF_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' /tmp/amprem-tunnel.log 2>/dev/null | tail -1 || echo "?")
+        local CF_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' $AMPREM_TMP/amprem-tunnel.log 2>/dev/null | tail -1 || echo "?")
         echo -e "  ${GREEN}[ON]${NC}   Cloudflare Tunnel  PID:$CF_PID  Uptime: $UPTIME"
         [ "$CF_URL" != "?" ] && echo "         URL: $CF_URL"
     fi
@@ -141,7 +146,7 @@ check_status() {
     if [ -n "$NGROK_PID" ]; then
         ANY=1
         local UPTIME=$(format_uptime "$NGROK_PID")
-        local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1 || echo "?")
+        local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' $AMPREM_TMP/amprem-ngrok.log 2>/dev/null | tail -1 || echo "?")
         echo -e "  ${GREEN}[ON]${NC}   Ngrok  PID:$NGROK_PID  Uptime: $UPTIME"
         [ "$NGROK_URL" != "?" ] && echo "         URL: $NGROK_URL"
     fi
@@ -151,7 +156,7 @@ check_status() {
     if [ -n "$LT_PID" ]; then
         ANY=1
         local UPTIME=$(format_uptime "$LT_PID")
-        local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1 || echo "?")
+        local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' $AMPREM_TMP/amprem-lt.log 2>/dev/null | tail -1 || echo "?")
         echo -e "  ${GREEN}[ON]${NC}   LocalTunnel  PID:$LT_PID  Uptime: $UPTIME"
         [ "$LT_URL" != "?" ] && echo "         URL: $LT_URL"
     fi
@@ -161,7 +166,7 @@ check_status() {
     if [ -n "$PK_PID" ]; then
         ANY=1
         local UPTIME=$(format_uptime "$PK_PID")
-        local PK_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.pagekite\.me' /tmp/amprem-pk.log 2>/dev/null | tail -1 || echo "?")
+        local PK_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.pagekite\.me' $AMPREM_TMP/amprem-pk.log 2>/dev/null | tail -1 || echo "?")
         echo -e "  ${GREEN}[ON]${NC}   Pagekite  PID:$PK_PID  Uptime: $UPTIME"
         [ "$PK_URL" != "?" ] && echo "         URL: $PK_URL"
     fi
@@ -171,7 +176,7 @@ check_status() {
     if [ -n "$SERVEO_PID" ]; then
         ANY=1
         local UPTIME=$(format_uptime "$SERVEO_PID")
-        local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1 || echo "?")
+        local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' $AMPREM_TMP/amprem-serveo.log 2>/dev/null | tail -1 || echo "?")
         echo -e "  ${GREEN}[ON]${NC}   Serveo  PID:$SERVEO_PID  Uptime: $UPTIME"
         [ "$SERVEO_URL" != "?" ] && echo "         URL: $SERVEO_URL"
     fi
@@ -231,7 +236,7 @@ manage_services() {
             fi
             # Fallback: parse dari log server
             if [ "$PORT" = "?" ] || [ -z "$PORT" ]; then
-                local LOG_PORT=$(grep -oP 'localhost:\K[0-9]+' /tmp/amprem.log 2>/dev/null | head -1)
+                local LOG_PORT=$(grep -oP 'localhost:\K[0-9]+' $AMPREM_TMP/amprem.log 2>/dev/null | head -1)
                 [ -n "$LOG_PORT" ] && PORT="$LOG_PORT"
             fi
             COUNT=$((COUNT+1))
@@ -239,7 +244,7 @@ manage_services() {
             SVC_NAMES+=("Node.js Server")
             SVC_PATTERNS+=("server.js")
             SVC_URLS+=("http://localhost:${PORT:-3000}")
-            SVC_LOGFILES+=("/tmp/amprem.log")
+            SVC_LOGFILES+=("$AMPREM_TMP/amprem.log")
             SVC_RESTART_CMD+=("start_server ${PORT:-8080}")
             SVC_PORTS+=("${PORT:-?}")
         fi
@@ -247,70 +252,70 @@ manage_services() {
         # Cloudflare
         local CFPID=$(get_service_pid "cloudflared")
         if [ -n "$CFPID" ]; then
-            local CF_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' /tmp/amprem-tunnel.log 2>/dev/null | tail -1 || echo '-')
+            local CF_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.(trycloudflare\.com|cloudflared\.com)' $AMPREM_TMP/amprem-tunnel.log 2>/dev/null | tail -1 || echo '-')
             COUNT=$((COUNT+1))
             SVC_PIDS+=("$CFPID")
             SVC_NAMES+=("Cloudflare Tunnel")
             SVC_PATTERNS+=("cloudflared")
             SVC_URLS+=("$CF_URL")
-            SVC_LOGFILES+=("/tmp/amprem-tunnel.log")
-            SVC_RESTART_CMD+=("pkill -f cloudflared; sleep 1; $CF_BIN tunnel --url http://localhost:8080 > /tmp/amprem-tunnel.log 2>&1 &")
+            SVC_LOGFILES+=("$AMPREM_TMP/amprem-tunnel.log")
+            SVC_RESTART_CMD+=("pkill -f cloudflared; sleep 1; $CF_BIN tunnel --url http://localhost:8080 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &")
             SVC_PORTS+=("-")
         fi
 
         # Ngrok
         local NPID=$(get_service_pid "ngrok")
         if [ -n "$NPID" ]; then
-            local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1 || echo '-')
+            local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' $AMPREM_TMP/amprem-ngrok.log 2>/dev/null | tail -1 || echo '-')
             COUNT=$((COUNT+1))
             SVC_PIDS+=("$NPID")
             SVC_NAMES+=("Ngrok")
             SVC_PATTERNS+=("ngrok")
             SVC_URLS+=("$NGROK_URL")
-            SVC_LOGFILES+=("/tmp/amprem-ngrok.log")
-            SVC_RESTART_CMD+=("pkill -f ngrok; sleep 1; $NGROK_BIN http 8080 > /tmp/amprem-ngrok.log 2>&1 &")
+            SVC_LOGFILES+=("$AMPREM_TMP/amprem-ngrok.log")
+            SVC_RESTART_CMD+=("pkill -f ngrok; sleep 1; $NGROK_BIN http 8080 > $AMPREM_TMP/amprem-ngrok.log 2>&1 &")
             SVC_PORTS+=("-")
         fi
 
         # LocalTunnel
         local LTPID=$(get_service_pid "localtunnel")
         if [ -n "$LTPID" ]; then
-            local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1 || echo '-')
+            local LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' $AMPREM_TMP/amprem-lt.log 2>/dev/null | tail -1 || echo '-')
             COUNT=$((COUNT+1))
             SVC_PIDS+=("$LTPID")
             SVC_NAMES+=("LocalTunnel")
             SVC_PATTERNS+=("localtunnel")
             SVC_URLS+=("$LT_URL")
-            SVC_LOGFILES+=("/tmp/amprem-lt.log")
-            SVC_RESTART_CMD+=("pkill -f localtunnel; sleep 1; $LT_BIN --port 8080 > /tmp/amprem-lt.log 2>&1 &")
+            SVC_LOGFILES+=("$AMPREM_TMP/amprem-lt.log")
+            SVC_RESTART_CMD+=("pkill -f localtunnel; sleep 1; $LT_BIN --port 8080 > $AMPREM_TMP/amprem-lt.log 2>&1 &")
             SVC_PORTS+=("-")
         fi
 
         # Pagekite
         local PKPID=$(get_service_pid "pagekite")
         if [ -n "$PKPID" ]; then
-            local PK_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.pagekite\.me' /tmp/amprem-pk.log 2>/dev/null | tail -1 || echo '-')
+            local PK_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.pagekite\.me' $AMPREM_TMP/amprem-pk.log 2>/dev/null | tail -1 || echo '-')
             COUNT=$((COUNT+1))
             SVC_PIDS+=("$PKPID")
             SVC_NAMES+=("Pagekite")
             SVC_PATTERNS+=("pagekite")
             SVC_URLS+=("$PK_URL")
-            SVC_LOGFILES+=("/tmp/amprem-pk.log")
-            SVC_RESTART_CMD+=("pkill -f pagekite; sleep 1; $PK_BIN 8080 :8080 > /tmp/amprem-pk.log 2>&1 &")
+            SVC_LOGFILES+=("$AMPREM_TMP/amprem-pk.log")
+            SVC_RESTART_CMD+=("pkill -f pagekite; sleep 1; $PK_BIN 8080 :8080 > $AMPREM_TMP/amprem-pk.log 2>&1 &")
             SVC_PORTS+=("-")
         fi
 
         # Serveo
         local SVPID=$(get_service_pid "serveo")
         if [ -n "$SVPID" ]; then
-            local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1 || echo '-')
+            local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' $AMPREM_TMP/amprem-serveo.log 2>/dev/null | tail -1 || echo '-')
             COUNT=$((COUNT+1))
             SVC_PIDS+=("$SVPID")
             SVC_NAMES+=("Serveo")
             SVC_PATTERNS+=("serveo")
             SVC_URLS+=("$SERVEO_URL")
-            SVC_LOGFILES+=("/tmp/amprem-serveo.log")
-            SVC_RESTART_CMD+=("pkill -f serveo; sleep 1; setsid ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net > /tmp/amprem-serveo.log 2>&1 &")
+            SVC_LOGFILES+=("$AMPREM_TMP/amprem-serveo.log")
+            SVC_RESTART_CMD+=("pkill -f serveo; sleep 1; setsid ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net > $AMPREM_TMP/amprem-serveo.log 2>&1 &")
             SVC_PORTS+=("-")
         fi
 
@@ -383,7 +388,7 @@ manage_services() {
                     echo -e "  Hentikan ${YELLOW}${TARGET_NAME}${NC} (PID: $TARGET_PID)?"
                     read -rp "  Yakin? [y/N]: " KONFIRM
                     if [[ "$KONFIRM" =~ ^[Yy]$ ]]; then
-                        mkdir -p /tmp
+                        mkdir -p "$AMPREM_TMP"
                         if pkill -f "$TARGET_PATTERN" 2>/dev/null; then
                             sleep 1
                             # Verifikasi benar-benar berhenti
@@ -406,7 +411,7 @@ manage_services() {
                     echo -e "  Restart ${YELLOW}${TARGET_NAME}${NC}?"
                     read -rp "  Yakin? [y/N]: " KONFIRM
                     if [[ "$KONFIRM" =~ ^[Yy]$ ]]; then
-                        mkdir -p /tmp
+                        mkdir -p "$AMPREM_TMP"
                         echo "  Menghentikan $TARGET_NAME..."
                         pkill -f "$TARGET_PATTERN" 2>/dev/null
                         sleep 2
@@ -430,13 +435,13 @@ manage_services() {
                                 NODE_BIN="$(command -v node)"
                             fi
                             [ -z "$NODE_BIN" ] && warn "Node.js tidak ditemukan." && break
-                            PORT=$RESTART_PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > /tmp/amprem.log 2>&1 &
+                            PORT=$RESTART_PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > $AMPREM_TMP/amprem.log 2>&1 &
                             local NEW_PID=$!
                             sleep 3
                             if kill -0 $NEW_PID 2>/dev/null; then
                                 ok "$TARGET_NAME restart berhasil (PID: $NEW_PID)"
                             else
-                                warn "Gagal restart. Cek: cat /tmp/amprem.log"
+                                warn "Gagal restart. Cek: cat $AMPREM_TMP/amprem.log"
                             fi
                         else
                             # Tunnel lain - restart via nohup
@@ -445,42 +450,42 @@ manage_services() {
                                     local CF_BIN
                                     $IS_TERMUX && CF_BIN="$PREFIX/bin/cloudflared" || CF_BIN="$(command -v cloudflared)"
                                     [ -z "$CF_BIN" ] && CF_BIN="cloudflared"
-                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel --url http://localhost:8080 > /tmp/amprem-tunnel.log 2>&1 &
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel --url http://localhost:8080 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
                                     sleep 5
-                                    local NEW_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/amprem-tunnel.log 2>/dev/null | tail -1)
+                                    local NEW_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' $AMPREM_TMP/amprem-tunnel.log 2>/dev/null | tail -1)
                                     [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "Tunnel restart (cek log untuk URL)"
                                     ;;
                                 "Ngrok")
                                     local NGROK_BIN
                                     $IS_TERMUX && NGROK_BIN="$PREFIX/bin/ngrok" || NGROK_BIN="$(command -v ngrok)"
                                     [ -z "$NGROK_BIN" ] && NGROK_BIN="ngrok"
-                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$NGROK_BIN" http 8080 > /tmp/amprem-ngrok.log 2>&1 &
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$NGROK_BIN" http 8080 > $AMPREM_TMP/amprem-ngrok.log 2>&1 &
                                     sleep 5
-                                    local NEW_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1)
+                                    local NEW_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' $AMPREM_TMP/amprem-ngrok.log 2>/dev/null | tail -1)
                                     [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "Ngrok restart (cek log untuk URL)"
                                     ;;
                                 "LocalTunnel")
                                     local LT_BIN
                                     $IS_TERMUX && LT_BIN="$PREFIX/bin/lt" || LT_BIN="$(command -v lt)"
                                     [ -z "$LT_BIN" ] && LT_BIN="lt"
-                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$LT_BIN" --port 8080 > /tmp/amprem-lt.log 2>&1 &
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$LT_BIN" --port 8080 > $AMPREM_TMP/amprem-lt.log 2>&1 &
                                     sleep 10
-                                    local NEW_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1)
+                                    local NEW_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' $AMPREM_TMP/amprem-lt.log 2>/dev/null | tail -1)
                                     [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "LocalTunnel restart (cek log untuk URL)"
                                     ;;
                                 "Pagekite")
                                     local PK_BIN
                                     $IS_TERMUX && PK_BIN="$PREFIX/bin/pagekite" || PK_BIN="$(command -v pagekite)"
                                     [ -z "$PK_BIN" ] && PK_BIN="pagekite"
-                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$PK_BIN" 8080 :8080 > /tmp/amprem-pk.log 2>&1 &
+                                    $IS_TERMUX && PATH="$PREFIX/bin:$PATH" nohup "$PK_BIN" 8080 :8080 > $AMPREM_TMP/amprem-pk.log 2>&1 &
                                     sleep 5
                                     ok "Pagekite restart (cek log untuk URL)"
                                     ;;
                                 "Serveo")
                                     $IS_TERMUX && local SSH_BIN="$PREFIX/bin/ssh" || local SSH_BIN="$(command -v ssh)"
-                                    setsid $SSH_BIN -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net > /tmp/amprem-serveo.log 2>&1 &
+                                    setsid $SSH_BIN -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net > $AMPREM_TMP/amprem-serveo.log 2>&1 &
                                     sleep 8
-                                    local NEW_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1)
+                                    local NEW_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' $AMPREM_TMP/amprem-serveo.log 2>/dev/null | tail -1)
                                     [ -n "$NEW_URL" ] && ok "URL baru: $NEW_URL" || ok "Serveo restart (cek log untuk URL)"
                                     ;;
                             esac
@@ -532,7 +537,7 @@ manage_services() {
 stop_all() {
     sep
     info "Menghentikan semua service..."
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
 
     pkill -f "node server.js" 2>/dev/null && ok "Node.js dihentikan" || warn "Node.js tidak jalan"
     pkill -f "cloudflared" 2>/dev/null && ok "Cloudflare dihentikan" || warn "Cloudflare tidak jalan"
@@ -547,7 +552,7 @@ stop_all() {
 #  START SERVER
 # ============================================================
 start_server() {
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
 
     local PORT=${1:-3000}
 
@@ -590,7 +595,7 @@ start_server() {
 
     # Jalankan server
     cd "$SCRIPT_DIR"
-    PORT=$PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > /tmp/amprem.log 2>&1 &
+    PORT=$PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > $AMPREM_TMP/amprem.log 2>&1 &
     local SERVER_PID=$!
     sleep 3
 
@@ -599,7 +604,7 @@ start_server() {
     else
         warn "Server gagal start. Cek error:"
         echo ""
-        cat /tmp/amprem.log
+        cat $AMPREM_TMP/amprem.log
         echo ""
         return 1
     fi
@@ -831,7 +836,7 @@ deploy_localhost() {
     echo "    http://localhost:8080"
     echo "    http://${LOCAL_IP:-localhost}:8080"
     echo ""
-    echo "  Log: cat /tmp/amprem.log"
+    echo "  Log: cat $AMPREM_TMP/amprem.log"
     echo "  Stop: pkill -f 'node server'"
 }
 
@@ -887,15 +892,15 @@ deploy_ngrok() {
         if $IS_TERMUX; then
             pkg install wget -y
             # Termux ARM64
-            wget -q "https://github.com/ngrok/ngrok/releases/latest/download/ngrok-v3-stable-linux-arm64.tgz" -O /tmp/ngrok.tgz 2>/dev/null || \
-            wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz" -O /tmp/ngrok.tgz
-            tar -xzf /tmp/ngrok.tgz -C "$PREFIX/bin/"
+            wget -q "https://github.com/ngrok/ngrok/releases/latest/download/ngrok-v3-stable-linux-arm64.tgz" -O $AMPREM_TMP/ngrok.tgz 2>/dev/null || \
+            wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz" -O $AMPREM_TMP/ngrok.tgz
+            tar -xzf $AMPREM_TMP/ngrok.tgz -C "$PREFIX/bin/"
             chmod +x "$PREFIX/bin/ngrok"
             NGROK_BIN="$PREFIX/bin/ngrok"
         else
-            wget -q "https://github.com/ngrok/ngrok/releases/latest/download/ngrok-v3-stable-linux-amd64.tgz" -O /tmp/ngrok.tgz 2>/dev/null || \
-            wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz" -O /tmp/ngrok.tgz
-            tar -xzf /tmp/ngrok.tgz -C /usr/local/bin/
+            wget -q "https://github.com/ngrok/ngrok/releases/latest/download/ngrok-v3-stable-linux-amd64.tgz" -O $AMPREM_TMP/ngrok.tgz 2>/dev/null || \
+            wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz" -O $AMPREM_TMP/ngrok.tgz
+            tar -xzf $AMPREM_TMP/ngrok.tgz -C /usr/local/bin/
             chmod +x /usr/local/bin/ngrok
             NGROK_BIN="/usr/local/bin/ngrok"
         fi
@@ -914,16 +919,16 @@ EOF
     start_server 8080
 
     pkill -f "ngrok" 2>/dev/null || true
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
 
     if $IS_TERMUX; then
-        PATH="$PREFIX/bin:$PATH" "$NGROK_BIN" http 8080 > /tmp/amprem-ngrok.log 2>&1 &
+        PATH="$PREFIX/bin:$PATH" "$NGROK_BIN" http 8080 > $AMPREM_TMP/amprem-ngrok.log 2>&1 &
     else
-        "$NGROK_BIN" http 8080 > /tmp/amprem-ngrok.log 2>&1 &
+        "$NGROK_BIN" http 8080 > $AMPREM_TMP/amprem-ngrok.log 2>&1 &
     fi
     sleep 5
 
-    local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' /tmp/amprem-ngrok.log 2>/dev/null | tail -1)
+    local NGROK_URL=$(grep -oP 'https://[0-9a-f]+\.ngrok\.io' $AMPREM_TMP/amprem-ngrok.log 2>/dev/null | tail -1)
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
@@ -932,7 +937,7 @@ EOF
         echo "  URL PUBLIK:"
         echo -e "    ${GREEN}${BOLD}${NGROK_URL}${NC}"
     else
-        echo "  URL belum muncul. Cek: cat /tmp/amprem-ngrok.log"
+        echo "  URL belum muncul. Cek: cat $AMPREM_TMP/amprem-ngrok.log"
         echo "  Dashboard: https://dashboard.ngrok.com"
     fi
     echo ""
@@ -962,18 +967,18 @@ deploy_cf_quick() {
 
     start_server 8080
 
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
     pkill -f "cloudflared" 2>/dev/null || true
 
     if $IS_TERMUX; then
-        PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel --url http://localhost:8080 > /tmp/amprem-tunnel.log 2>&1 &
+        PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel --url http://localhost:8080 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
     else
-        nohup "$CF_BIN" tunnel --url http://localhost:3000 > /tmp/amprem-tunnel.log 2>&1 &
+        nohup "$CF_BIN" tunnel --url http://localhost:3000 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
     fi
     sleep 5
 
     local TUNNEL_URL
-    TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/amprem-tunnel.log 2>/dev/null | tail -1)
+    TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' $AMPREM_TMP/amprem-tunnel.log 2>/dev/null | tail -1)
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
@@ -983,9 +988,9 @@ deploy_cf_quick() {
         echo -e "    ${GREEN}${BOLD}${TUNNEL_URL}${NC}"
     else
         echo "  URL belum muncul."
-        echo "  Cek: cat /tmp/amprem-tunnel.log"
+        echo "  Cek: cat $AMPREM_TMP/amprem-tunnel.log"
         echo "  Tunggu 10 detik, lalu:"
-        echo "    grep trycloudflare /tmp/amprem-tunnel.log"
+        echo "    grep trycloudflare $AMPREM_TMP/amprem-tunnel.log"
     fi
     echo ""
     echo "  Stop: pkill -f 'cloudflared'"
@@ -1029,7 +1034,7 @@ deploy_cf_named() {
 
     local TUNNEL_NAME="amprem-web"
 
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
     pkill -f "cloudflared" 2>/dev/null || true
 
     if $IS_TERMUX; then
@@ -1066,10 +1071,10 @@ EOF
 
     if $IS_TERMUX; then
         PATH="$PREFIX/bin:$PATH" "$CF_BIN" tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
-        PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
+        PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
     else
         "$CF_BIN" tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
-        nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
+        nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
     fi
     sleep 5
 
@@ -1114,17 +1119,17 @@ deploy_localtunnel() {
         warn "LocalTunnel gagal install. Cek: npm install -g localtunnel"
     fi
 
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
     start_server 8080
 
     $IS_TERMUX && local LT_ENV="PATH=$PREFIX/bin:$PATH" || local LT_ENV=""
 
-    eval "$LT_ENV $LT_BIN --port 8080" > /tmp/amprem-lt.log 2>&1 &
+    eval "$LT_ENV $LT_BIN --port 8080" > $AMPREM_TMP/amprem-lt.log 2>&1 &
     sleep 10
 
     # Cari URL dari log
     local LT_URL
-    LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' /tmp/amprem-lt.log 2>/dev/null | tail -1)
+    LT_URL=$(grep -oP 'https://[a-z0-9-]+\.l\.tunnel\.cloud\.l\.google\.com' $AMPREM_TMP/amprem-lt.log 2>/dev/null | tail -1)
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
@@ -1136,7 +1141,7 @@ deploy_localtunnel() {
         echo "  NOTE: Buka URL ini di browser SEKALI untuk bypass captcha."
         echo "  NOTE: URL berubah setiap sesi."
     else
-        echo "  URL belum muncul. Cek: cat /tmp/amprem-lt.log"
+        echo "  URL belum muncul. Cek: cat $AMPREM_TMP/amprem-lt.log"
     fi
     echo ""
     echo "  Stop: pkill -f 'localtunnel'"
@@ -1180,20 +1185,20 @@ deploy_pagekite() {
 
     start_server 8080
 
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
     pkill -f "pagekite" 2>/dev/null || true
 
     if $IS_TERMUX; then
-        PATH="$PREFIX/bin:$PATH" "$PK_BIN" 8080 :8080 $PK_CFG > /tmp/amprem-pk.log 2>&1 &
+        PATH="$PREFIX/bin:$PATH" "$PK_BIN" 8080 :8080 $PK_CFG > $AMPREM_TMP/amprem-pk.log 2>&1 &
     else
-        "$PK_BIN" 8080 :8080 $PK_CFG > /tmp/amprem-pk.log 2>&1 &
+        "$PK_BIN" 8080 :8080 $PK_CFG > $AMPREM_TMP/amprem-pk.log 2>&1 &
     fi
     sleep 5
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
     echo ""
-    echo "  Cek URL di: cat /tmp/amprem-pk.log"
+    echo "  Cek URL di: cat $AMPREM_TMP/amprem-pk.log"
     echo "  Stop: pkill -f 'pagekite'"
 }
 
@@ -1226,7 +1231,7 @@ deploy_serveo() {
 
     start_server 8080
 
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
     pkill -f "serveo" 2>/dev/null || true
 
     echo ""
@@ -1238,10 +1243,10 @@ deploy_serveo() {
         SERVEO_CMD="$SSH_BIN -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 80:localhost:8080 serveo.net"
     fi
 
-    setsid $SERVEO_CMD > /tmp/amprem-serveo.log 2>&1 &
+    setsid $SERVEO_CMD > $AMPREM_TMP/amprem-serveo.log 2>&1 &
     sleep 8
 
-    local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' /tmp/amprem-serveo.log 2>/dev/null | tail -1)
+    local SERVEO_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.serveo\.net' $AMPREM_TMP/amprem-serveo.log 2>/dev/null | tail -1)
 
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
@@ -1250,7 +1255,7 @@ deploy_serveo() {
         echo "  URL PUBLIK:"
         echo -e "    ${GREEN}${BOLD}${SERVEO_URL}${NC}"
     else
-        echo "  Cek log: cat /tmp/amprem-serveo.log"
+        echo "  Cek log: cat $AMPREM_TMP/amprem-serveo.log"
         echo "  Serveo perlu SSH connection. Pastikan koneksi internet aktif."
     fi
     echo ""
@@ -1358,7 +1363,7 @@ EOF
     echo "  Manage:"
     echo "    sudo systemctl restart nginx   # restart Nginx"
     echo "    sudo systemctl status nginx    # cek status Nginx"
-    echo "    cat /tmp/amprem.log           # log server"
+    echo "    cat $AMPREM_TMP/amprem.log           # log server"
 }
 
 # ============================================================
@@ -1471,7 +1476,7 @@ deploy_vps_cf_domain() {
 
     local TUNNEL_NAME="amprem-web"
 
-    mkdir -p /tmp
+    mkdir -p "$AMPREM_TMP"
     pkill -f "cloudflared" 2>/dev/null || true
     "$CF_BIN" tunnel delete "$TUNNEL_NAME" 2>/dev/null || true
     "$CF_BIN" tunnel create "$TUNNEL_NAME" > /dev/null 2>&1
@@ -1491,7 +1496,7 @@ ingress:
 EOF
 
     "$CF_BIN" tunnel route dns "$TUNNEL_NAME" "$DOMAIN" > /dev/null 2>&1
-    nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > /tmp/amprem-tunnel.log 2>&1 &
+    nohup "$CF_BIN" tunnel run "$TUNNEL_NAME" > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
     sleep 5
 
     sep
