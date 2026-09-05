@@ -204,25 +204,19 @@ function isApiFailure(data) {
   return data.status === false || data.status === 'error' || data.success === false
 }
 
-// ---------- temp-email14 RapidAPI (Inbox Mail) ----------
-// API key sengaja hanya ada di config.js + server. Browser cukup menerima
-// alamat dan mengirim access token mailbox-nya saat meminta daftar email.
-const TEMP_EMAIL_API = 'https://temp-email14.p.rapidapi.com'
+// ---------- AZBry Temp Mail (Inbox Mail) ----------
+// Provider ini tidak memerlukan API key. Browser hanya menyimpan session
+// mailbox; semua panggilan ke provider tetap dilakukan dari server.
+const TEMP_EMAIL_API = 'https://api.azbry.com/api/tools/tempmail'
 
-async function tempEmailRequest(path, accessToken) {
-  const apikey = config.tempEmailRapidApiKey
-  if (!apikey) throw new Error('API key Inbox Mail belum diset di config.js')
-  const headers = {
-    'x-rapidapi-key': apikey,
-    'x-rapidapi-host': 'temp-email14.p.rapidapi.com',
-    'Content-Type': 'application/json'
-  }
-  if (accessToken) headers.Authorization = accessToken
-  const response = await fetch(`${TEMP_EMAIL_API}${path}`, { headers, signal: AbortSignal.timeout(15000) })
+async function tempEmailRequest(session) {
+  const url = new URL(TEMP_EMAIL_API)
+  if (session) url.searchParams.set('session', session)
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) })
   const raw = await response.text()
   let data
   try { data = JSON.parse(raw) } catch { throw new Error(`Inbox API membalas format tidak dikenal (HTTP ${response.status})`) }
-  if (!response.ok || data.success === false || data.status === false) throw new Error(data.msg || data.message || 'Inbox API gagal dipanggil')
+  if (!response.ok || data.status === false || data.success === false) throw new Error(data.message || data.msg || 'Inbox API gagal dipanggil')
   return data
 }
 
@@ -255,10 +249,10 @@ function extractSafeLinks(...values) {
 
 app.post('/api/inbox/new', async (_req, res) => {
   try {
-    const data = await tempEmailRequest('/newmail')
-    const mailbox = data.newmail
-    if (!mailbox?.email || !mailbox?.access_token) throw new Error('Inbox API tidak mengembalikan mailbox')
-    return res.json({ ok: true, email: mailbox.email, accessToken: mailbox.access_token })
+    const data = await tempEmailRequest()
+    const mailbox = data.result
+    if (!mailbox?.mailbox || !mailbox?.session) throw new Error('Inbox API tidak mengembalikan mailbox')
+    return res.json({ ok: true, email: mailbox.mailbox, accessToken: mailbox.session })
   } catch (err) {
     return res.status(502).json({ ok: false, message: err.message })
   }
@@ -268,38 +262,23 @@ app.post('/api/inbox/preview', async (req, res) => {
   const accessToken = (req.body?.accessToken || '').trim()
   if (!/^[a-zA-Z0-9_-]{16,200}$/.test(accessToken)) return res.status(400).json({ ok: false, message: 'Token mailbox tidak valid' })
   try {
-    // /mails adalah daftar mailbox lengkap; /preview/mails hanya ringkasan
-    // subjek dan pada beberapa mailbox tidak langsung mencantumkan pesan baru.
-    const data = await tempEmailRequest('/mails', accessToken)
-    const mailTokens = Array.isArray(data.mails) ? data.mails : []
-    // Endpoint /mails hanya mengembalikan token seperti "3MxwKb...".
-    // Ambil detail tiap token agar UI menampilkan email yang bisa dibaca.
-    const mails = await Promise.all(mailTokens.slice(0, 20).map(async (entry) => {
-      const token = typeof entry === 'string' ? entry : entry?.token || entry?.id || entry?.mail_token
-      if (!token || !/^[a-zA-Z0-9_-]{1,200}$/.test(token)) return null
-      try {
-        const detail = await tempEmailRequest(`/read/${encodeURIComponent(token)}`, accessToken)
-        const mail = detail.mail || detail.message || detail.email || detail
-        const text = findMailValue(detail, ['plain_body', 'body_text', 'bodytext', 'content_text', 'text', 'message_text', 'body', 'content', 'message'])
-        const html = findMailValue(detail, ['html_body', 'body_html', 'content_html', 'message_html', 'html'])
-        return {
-          token,
-          from: findMailValue(detail, ['from', 'sender', 'from_email', 'fromemail']) || mail.from || '',
-          subject: findMailValue(detail, ['subject', 'title', 'mail_subject']) || mail.subject || '(Tanpa subjek)',
-          // Temp Email 14 mengirim plain_body/html_body. Utamakan teks biasa
-          // supaya body dan URL verifikasi dapat langsung dibaca tanpa HTML mentah.
-          text,
-          html,
-          links: extractSafeLinks(html, text)
-        }
-      } catch (err) {
-        console.warn(`[INBOX] gagal membaca pesan ${token}: ${err.message}`)
-        return { token, from: '', subject: 'Pesan baru', text: 'Detail pesan belum dapat dimuat.' }
+    const data = await tempEmailRequest(accessToken)
+    const inbox = data.result || {}
+    const messages = Array.isArray(inbox.messages) ? inbox.messages : []
+    const mails = messages.slice(0, 20).map((message, index) => {
+      const text = findMailValue(message, ['plain_body', 'body_text', 'bodytext', 'content_text', 'text', 'message_text', 'body', 'content', 'message'])
+      const html = findMailValue(message, ['html_body', 'body_html', 'content_html', 'message_html', 'html'])
+      return {
+        token: String(message?.id || message?.token || message?.message_id || index),
+        from: findMailValue(message, ['from', 'sender', 'from_email', 'fromemail']),
+        subject: findMailValue(message, ['subject', 'title', 'mail_subject']) || '(Tanpa subjek)',
+        text,
+        html,
+        links: extractSafeLinks(html, text)
       }
-    }))
-    const visibleMails = mails.filter(Boolean)
-    console.log(`[INBOX] mailbox memuat ${visibleMails.length} pesan; expired=${Boolean(data.expired)}`)
-    return res.json({ ok: true, mails: visibleMails, expired: Boolean(data.expired) })
+    })
+    console.log(`[INBOX] mailbox memuat ${mails.length} pesan dari AZBry`)
+    return res.json({ ok: true, mails, expired: false })
   } catch (err) {
     return res.status(502).json({ ok: false, message: err.message })
   }
