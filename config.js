@@ -22,4 +22,7 @@ export const config = {
   //   3. Salin API key-nya, ganti nilai di bawah ini
   amprem7ApiKey: 'LlSWC',
 
+  // RapidAPI key untuk Inbox Mail (temp-email14). Disimpan di server agar
+  // tidak pernah terkirim atau terlihat di browser pengunjung.
+  tempEmailRapidApiKey: '17cd3bac0bmshaeb9dec3da25ecap1fd8a0jsnc959b401b474'
 }
