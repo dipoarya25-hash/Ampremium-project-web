@@ -21,6 +21,45 @@ async function apiCall(path, body) {
   return data
 }
 
+function mountBottomNav() {
+  const page = location.pathname.split('/').pop() || 'index.html'
+  const current = page === 'history.html' ? 'history' : page === 'inbox.html' ? 'inbox' : 'dashboard'
+  const links = [['dashboard', 'index.html', '⌂', 'Dashboard'], ['history', 'history.html', '◷', 'Riwayat'], ['inbox', 'inbox.html', '✉', 'Inbox']]
+  const nav = document.createElement('nav')
+  nav.className = 'bottom-nav'
+  nav.setAttribute('aria-label', 'Navigasi utama')
+  nav.innerHTML = links.map(function (link) {
+    return '<a class="bottom-nav-link ' + (current === link[0] ? 'active' : '') + '" href="' + link[1] + '"><span class="bottom-nav-icon" aria-hidden="true">' + link[2] + '</span><span>' + link[3] + '</span></a>'
+  }).join('')
+  // Saat user baru saja pindah dari Dashboard ke Inbox/Riwayat, kembali
+  // dengan History API agar browser memulihkan halaman sebelumnya (termasuk
+  // posisi scroll dan data formulir), bukan memuat index.html dari awal.
+  const dashboardLink = nav.querySelector('a[href="index.html"]')
+  if (dashboardLink && current !== 'dashboard') {
+    dashboardLink.addEventListener('click', function (event) {
+      try {
+        const previous = new URL(document.referrer)
+        const previousPage = previous.pathname.split('/').pop() || 'index.html'
+        if (previous.origin === location.origin && previousPage === 'index.html') {
+          event.preventDefault()
+          history.back()
+        }
+      } catch {}
+    })
+  }
+  document.body.appendChild(nav)
+}
+
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem('amprem-payment-history') || '[]') } catch { return [] }
+}
+
+function saveHistory(item) {
+  const history = getHistory()
+  history.unshift(item)
+  localStorage.setItem('amprem-payment-history', JSON.stringify(history.slice(0, 30)))
+}
+
 async function pasteFromClipboard(inputEl) {
   try {
     const text = await navigator.clipboard.readText()
@@ -67,6 +106,8 @@ function renderSuccessCard(container, info) {
     ['Masa Berlaku', info.duration || '1 Tahun Penuh']
   ]
 
+  saveHistory({ orderId, email: info.email, duration: info.duration || '1 Tahun Penuh', createdAt: new Date().toISOString(), status: 'Berhasil' })
+
   container.className = ''
   container.innerHTML =
     '<div class="success-card">' +
@@ -99,3 +140,6 @@ function renderSuccessCard(container, info) {
     }).catch(function () {})
   })
 }
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountBottomNav)
+else mountBottomNav()
