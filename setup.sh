@@ -5,7 +5,9 @@
 # Jalankan: bash setup.sh
 # ============================================================
 
-set -e
+# set -e DIHAPUS karena script ini interaktif, banyak command
+# (pgrep, pkill, curl, dll) yang expected return non-zero.
+# Error handling pakai warn/fail/return di tiap function.
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -110,9 +112,14 @@ check_status() {
         local UPTIME=$(format_uptime "$SERVER_PID")
         local PORT="?"
         if command -v ss &>/dev/null; then
-            PORT=$(ss -tlnp 2>/dev/null | grep "$SERVER_PID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
+            PORT=$(ss -tlnp 2>/dev/null | grep "$SERVER_PID" | grep -oP ':\K[0-9]+' | head -1) || PORT="?"
         elif command -v lsof &>/dev/null; then
-            PORT=$(lsof -i -a -p "$SERVER_PID" 2>/dev/null | grep -oP ':\K[0-9]+' | grep -vE '^[0-9]{2,5}$' | head -1 || echo "?")
+            PORT=$(lsof -i -a -p "$SERVER_PID" 2>/dev/null | grep -oP ':\K[0-9]+' | grep -vE '^[0-9]{2,5}$' | head -1) || PORT="?"
+        fi
+        # Fallback: parse dari log server
+        if [ "$PORT" = "?" ] || [ -z "$PORT" ]; then
+            local LOG_PORT=$(grep -oP 'localhost:\K[0-9]+' /tmp/amprem.log 2>/dev/null | head -1)
+            [ -n "$LOG_PORT" ] && PORT="$LOG_PORT"
         fi
         echo -e "  ${GREEN}[ON]${NC}   Node.js server  PID:$SERVER_PID  Port:$PORT  Uptime: $UPTIME"
     else
@@ -218,9 +225,14 @@ manage_services() {
         if [ -n "$SPID" ]; then
             local PORT="?"
             if command -v ss &>/dev/null; then
-                PORT=$(ss -tlnp 2>/dev/null | grep "$SPID" | grep -oP ':\K[0-9]+' | head -1 || echo "?")
+                PORT=$(ss -tlnp 2>/dev/null | grep "$SPID" | grep -oP ':\K[0-9]+' | head -1) || PORT="?"
             elif command -v lsof &>/dev/null; then
-                PORT=$(lsof -i -a -p "$SPID" 2>/dev/null | grep -oP ':\K[0-9]+' | grep -vE '^[0-9]{2,5}$' | head -1 || echo "?")
+                PORT=$(lsof -i -a -p "$SPID" 2>/dev/null | grep -oP ':\K[0-9]+' | grep -vE '^[0-9]{2,5}$' | head -1) || PORT="?"
+            fi
+            # Fallback: parse dari log server
+            if [ "$PORT" = "?" ] || [ -z "$PORT" ]; then
+                local LOG_PORT=$(grep -oP 'localhost:\K[0-9]+' /tmp/amprem.log 2>/dev/null | head -1)
+                [ -n "$LOG_PORT" ] && PORT="$LOG_PORT"
             fi
             COUNT=$((COUNT+1))
             SVC_PIDS+=("$SPID")
@@ -419,9 +431,9 @@ manage_services() {
                             fi
                             [ -z "$NODE_BIN" ] && warn "Node.js tidak ditemukan." && break
                             PORT=$RESTART_PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > /tmp/amprem.log 2>&1 &
+                            local NEW_PID=$!
                             sleep 3
-                            if kill -0 $! 2>/dev/null; then
-                                local NEW_PID=$!
+                            if kill -0 $NEW_PID 2>/dev/null; then
                                 ok "$TARGET_NAME restart berhasil (PID: $NEW_PID)"
                             else
                                 warn "Gagal restart. Cek: cat /tmp/amprem.log"
