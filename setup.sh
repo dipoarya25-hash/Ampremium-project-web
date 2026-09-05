@@ -970,27 +970,62 @@ deploy_cf_quick() {
     mkdir -p "$AMPREM_TMP"
     pkill -f "cloudflared" 2>/dev/null || true
 
+    # Tambah env untuk koneksi lebih cepat
+    local CF_ENV="TUNNEL_QUICK_KEEPALIVE=30"
     if $IS_TERMUX; then
-        PATH="$PREFIX/bin:$PATH" nohup "$CF_BIN" tunnel --url http://localhost:8080 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
-    else
-        nohup "$CF_BIN" tunnel --url http://localhost:3000 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
+        CF_ENV="$CF_ENV PATH=$PREFIX/bin:$PATH"
     fi
-    sleep 5
 
-    local TUNNEL_URL
-    TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' $AMPREM_TMP/amprem-tunnel.log 2>/dev/null | tail -1)
+    if $IS_TERMUX; then
+        $CF_ENV nohup "$CF_BIN" tunnel --url http://localhost:8080 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
+    else
+        $CF_ENV nohup "$CF_BIN" tunnel --url http://localhost:3000 > $AMPREM_TMP/amprem-tunnel.log 2>&1 &
+    fi
 
     sep
-    echo -e "${GREEN}  BERHASIL JALAN!${NC}"
+    echo "  Mencoba konek ke Cloudflare..."
+    echo "  (tunggu maksimal 60 detik)"
     echo ""
+
+    local TUNNEL_URL
+    local RETRY=0
+    while [ $RETRY -lt 12 ]; do
+        TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' $AMPREM_TMP/amprem-tunnel.log 2>/dev/null | tail -1)
+        if [ -n "$TUNNEL_URL" ]; then
+            break
+        fi
+        # Cek kalau ada error
+        if grep -q "failed to request quick Tunnel" $AMPREM_TMP/amprem-tunnel.log 2>/dev/null; then
+            break
+        fi
+        echo -ne "  ${YELLOW}Menunggu... ${RETRY}s${NC}\r"
+        sleep 5
+        RETRY=$((RETRY+1))
+    done
+    echo ""
+
+    sep
     if [ -n "$TUNNEL_URL" ]; then
+        echo -e "${GREEN}  BERHASIL JALAN!${NC}"
+        echo ""
         echo "  URL PUBLIK:"
         echo -e "    ${GREEN}${BOLD}${TUNNEL_URL}${NC}"
+        echo ""
+        echo "  Kirim URL ini ke temen kamu!"
     else
-        echo "  URL belum muncul."
-        echo "  Cek: cat $AMPREM_TMP/amprem-tunnel.log"
-        echo "  Tunggu 10 detik, lalu:"
-        echo "    grep trycloudflare $AMPREM_TMP/amprem-tunnel.log"
+        echo -e "${RED}  GAGAL konek ke Cloudflare.${NC}"
+        echo ""
+        echo "  Kemungkinan penyebab:"
+        echo "    - Koneksi internet lambat/timeout"
+        echo "    - Firewall block api.trycloudflare.com"
+        echo ""
+        echo "  Cek log:"
+        echo "    cat $AMPREM_TMP/amprem-tunnel.log"
+        echo ""
+        echo "  Alternatif lain:"
+        echo "    - Pakai Ngrok (D -> 3)"
+        echo "    - Pakai Serveo (D -> 8)"
+        echo "    - Pakai WiFi lain"
     fi
     echo ""
     echo "  Stop: pkill -f 'cloudflared'"
