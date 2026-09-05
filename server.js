@@ -186,6 +186,7 @@ app.post('/api/amprem6/verify', async (req, res) => {
 // ---------- api.theresav.eu (amprem7) ----------
 // Beda dari yang lain: API-nya dipanggil via GET + query string
 // (bukan POST JSON), jadi helper-nya beda sendiri.
+// BUTUH API KEY - isi di config.js
 
 async function getJSON(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
@@ -204,10 +205,12 @@ function isApiFailure(data) {
 app.post('/api/amprem7/send', async (req, res) => {
   const email = (req.body?.email || '').trim()
   if (!validEmail(email)) return res.status(400).json({ ok: false, message: 'Email tidak valid' })
+  const apikey = config.amprem7ApiKey
+  if (!apikey) return res.status(400).json({ ok: false, message: 'API key amprem7 belum diset. Edit config.js dan isi amprem7ApiKey.' })
   try {
-    const url = `https://api.theresav.eu/api/premium/alightmotion/send?email=${encodeURIComponent(email)}`
+    const url = `https://api.theresav.eu/api/premium/alightmotion/send?email=${encodeURIComponent(email)}&apikey=${encodeURIComponent(apikey)}`
     const { data } = await getJSON(url)
-    if (isApiFailure(data)) return res.status(502).json({ ok: false, message: data.message || 'Gagal mengirim link' })
+    if (isApiFailure(data)) return res.status(502).json({ ok: false, message: data.message || data.error || 'Gagal mengirim link' })
     return res.json({ ok: true, email, message: data.message })
   } catch (err) {
     return res.status(500).json({ ok: false, message: err.message })
@@ -219,10 +222,12 @@ app.post('/api/amprem7/verify', async (req, res) => {
   const link = (req.body?.link || '').trim()
   if (!validEmail(email)) return res.status(400).json({ ok: false, message: 'Email tidak valid' })
   if (!validLink(link)) return res.status(400).json({ ok: false, message: 'Link tidak valid' })
+  const apikey = config.amprem7ApiKey
+  if (!apikey) return res.status(400).json({ ok: false, message: 'API key amprem7 belum diset. Edit config.js dan isi amprem7ApiKey.' })
   try {
-    const url = `https://api.theresav.eu/api/premium/alightmotion/verify?email=${encodeURIComponent(email)}&link=${encodeURIComponent(link)}`
+    const url = `https://api.theresav.eu/api/premium/alightmotion/verify?email=${encodeURIComponent(email)}&link=${encodeURIComponent(link)}&apikey=${encodeURIComponent(apikey)}`
     const { data } = await getJSON(url)
-    if (isApiFailure(data)) return res.status(502).json({ ok: false, message: data.message || 'Verifikasi gagal' })
+    if (isApiFailure(data)) return res.status(502).json({ ok: false, message: data.message || data.error || 'Verifikasi gagal' })
     return res.json({ ok: true, email, message: data.message })
   } catch (err) {
     return res.status(500).json({ ok: false, message: err.message })
