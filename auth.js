@@ -3,10 +3,55 @@ import { createClient } from '@supabase/supabase-js'
 const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,31}$/
 const emailFor = (username) => `${username}@users.amprem.local`
 const usernameOf = (value) => String(value || '').trim().toLowerCase()
+const LOGIN_WINDOW_MS = 60 * 60 * 1000
+const LOGIN_MAX_ATTEMPTS = 5
+const loginAttempts = new Map()
 const cookie = (header = '') => Object.fromEntries(header.split(';').map((p) => {
   const i = p.indexOf('=')
   return i < 0 ? [] : [p.slice(0, i).trim(), decodeURIComponent(p.slice(i + 1).trim())]
 }).filter((p) => p.length))
+
+function activeEntry(key, now) {
+  const entry = loginAttempts.get(key)
+  if (entry && entry.resetAt <= now) loginAttempts.delete(key)
+  return loginAttempts.get(key)
+}
+
+function rateLimitKeys(req) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown'
+  const username = usernameOf(req.body?.username)
+  // An account-specific key prevents an attacker from evading the limit by
+  // rotating IP addresses. The IP key also limits attempts across accounts.
+  return [
+    `ip:${ip}`,
+    ...(usernamePattern.test(username) ? [`username:${username}`] : [])
+  ]
+}
+
+function loginRateLimit(req, res, next) {
+  const now = Date.now()
+  const keys = rateLimitKeys(req)
+  const blocked = keys.map((key) => activeEntry(key, now)).find((entry) => entry && entry.count >= LOGIN_MAX_ATTEMPTS)
+  if (blocked) {
+    const retryAfter = Math.max(1, Math.ceil((blocked.resetAt - now) / 1000))
+    res.setHeader('Retry-After', String(retryAfter))
+    return res.status(429).json({ ok: false, message: `Terlalu banyak percobaan login. Coba lagi setelah ${Math.ceil(retryAfter / 60)} menit.` })
+  }
+  req.loginRateLimitKeys = keys
+  next()
+}
+
+function recordFailedLogin(req) {
+  const now = Date.now()
+  for (const key of req.loginRateLimitKeys || rateLimitKeys(req)) {
+    const entry = activeEntry(key, now)
+    loginAttempts.set(key, { count: (entry?.count || 0) + 1, resetAt: entry?.resetAt || now + LOGIN_WINDOW_MS })
+  }
+}
+
+function clearLoginAttempts(req) {
+  for (const key of req.loginRateLimitKeys || rateLimitKeys(req)) loginAttempts.delete(key)
+}
 
 export function mountAuth(app, publicDir) {
   const { SUPABASE_URL: url, SUPABASE_PUBLISHABLE_KEY: key, SUPABASE_SERVICE_ROLE_KEY: service } = process.env
@@ -34,15 +79,25 @@ export function mountAuth(app, publicDir) {
   }
 
   app.get('/login', (_req, res) => res.sendFile(`${publicDir}/login.html`))
-  app.post('/api/auth/login', async (req, res) => {
+  app.post('/api/auth/login', loginRateLimit, async (req, res) => {
     const username = usernameOf(req.body?.username), password = String(req.body?.password || '')
-    if (!usernamePattern.test(username) || !password) return res.status(400).json({ ok: false, message: 'Username atau password tidak valid.' })
+    if (!usernamePattern.test(username) || !password) {
+      recordFailedLogin(req)
+      return res.status(400).json({ ok: false, message: 'Username atau password tidak valid.' })
+    }
     try {
       const user = await lookupUsername(username)
-      if (!user?.email) return res.status(401).json({ ok: false, message: 'Username atau password salah.' })
+      if (!user?.email) {
+        recordFailedLogin(req)
+        return res.status(401).json({ ok: false, message: 'Username atau password salah.' })
+      }
       const { data, error } = await auth.auth.signInWithPassword({ email: user.email, password })
-      if (error || !data.session || !data.user) return res.status(401).json({ ok: false, message: 'Username atau password salah.' })
+      if (error || !data.session || !data.user) {
+        recordFailedLogin(req)
+        return res.status(401).json({ ok: false, message: 'Username atau password salah.' })
+      }
       if (data.user.app_metadata?.role === 'admin') return res.status(403).json({ ok: false, message: 'Gunakan website admin untuk masuk.' })
+      clearLoginAttempts(req)
       const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
       res.setHeader('Set-Cookie', `amprem_session=${encodeURIComponent(data.session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600${secure}`)
       res.json({ ok: true })

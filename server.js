@@ -20,6 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3000
 
+app.set('trust proxy', 1)
 app.use(express.json())
 const auth = mountAuth(app, path.join(__dirname, 'public'))
 
