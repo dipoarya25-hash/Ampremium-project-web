@@ -62,6 +62,18 @@ function saveHistory(item) {
   const history = getHistory()
   history.unshift(item)
   localStorage.setItem('amprem-payment-history', JSON.stringify(history.slice(0, 30)))
+  syncHistoryToAccount()
+}
+
+// Riwayat tetap disimpan lokal untuk tampilan cepat, lalu disalin ke metadata
+// akun Supabase agar admin dapat melihatnya dari dashboard admin terpisah.
+async function syncHistoryToAccount() {
+  try {
+    await fetch('/api/history/sync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: getHistory() })
+    })
+  } catch {}
 }
 
 async function pasteFromClipboard(inputEl) {
@@ -166,3 +178,6 @@ async function mountAccountMenu() {
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountAccountMenu)
 else mountAccountMenu()
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncHistoryToAccount)
+else syncHistoryToAccount()

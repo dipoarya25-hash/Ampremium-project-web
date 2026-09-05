@@ -51,4 +51,23 @@ export function mountAuth(app, publicDir) {
   app.post('/api/auth/logout', (_req, res) => { res.setHeader('Set-Cookie', 'amprem_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'); res.json({ ok: true }) })
   app.use(loggedIn)
   app.get('/api/auth/me', (req, res) => res.json({ ok: true, user: { username: req.user.user_metadata?.username, isAdmin: false } }))
+  app.post('/api/history/sync', async (req, res) => {
+    const rawHistory = Array.isArray(req.body?.history) ? req.body.history : []
+    const history = rawHistory.slice(0, 30).map((item) => ({
+      orderId: String(item?.orderId || '').slice(0, 80),
+      email: String(item?.email || '').slice(0, 254),
+      duration: String(item?.duration || '').slice(0, 80),
+      createdAt: String(item?.createdAt || '').slice(0, 40),
+      status: String(item?.status || '').slice(0, 40)
+    })).filter((item) => item.orderId && item.email && !Number.isNaN(new Date(item.createdAt).getTime()))
+    try {
+      const { error } = await admin.auth.admin.updateUserById(req.user.id, {
+        user_metadata: { ...req.user.user_metadata, amprem_history: history }
+      })
+      if (error) throw error
+      res.json({ ok: true, count: history.length })
+    } catch (error) {
+      res.status(500).json({ ok: false, message: `Gagal menyinkronkan riwayat: ${error.message}` })
+    }
+  })
 }
