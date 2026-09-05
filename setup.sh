@@ -62,9 +62,28 @@ get_local_ip() {
 #  GET PUBLIC IP
 # ============================================================
 get_public_ip() {
-    curl -s --max-time 5 ifconfig.me 2>/dev/null || \
-    curl -s --max-time 5 ipinfo.io/ip 2>/dev/null || \
+    # Coba multiple endpoint untuk dapat IPv4 public
+    local IP=$(curl -s --max-time 5 -4 ifconfig.me 2>/dev/null)
+    [ -n "$IP" ] && echo "$IP" && return
+    IP=$(curl -s --max-time 5 -4 ipinfo.io/ip 2>/dev/null)
+    [ -n "$IP" ] && echo "$IP" && return
+    IP=$(curl -s --max-time 5 -4 api.ipify.org 2>/dev/null)
+    [ -n "$IP" ] && echo "$IP" && return
+    IP=$(curl -s --max-time 5 -4 icanhazip.com 2>/dev/null)
+    [ -n "$IP" ] && echo "$IP" && return
     echo ""
+}
+
+# ============================================================
+#  CHECK PORT FORWARDING (optional - detect if port is open)
+# ============================================================
+check_port_open() {
+    local PORT=${1:-8080}
+    # Pakaiicanhazip.com punya service buat test port
+    # Tapi ini butuh server sendiri, jadi kita cuma bisa detect
+    # kalau user udah set port forward di router
+    # Cara simpel: cek apakah ada listen di 0.0.0.0 (bukan 127.0.0.1)
+    return 1  # placeholder - port forwarding detection complexo
 }
 
 # ============================================================
@@ -199,9 +218,29 @@ check_status() {
     echo "  IP Lokal  : ${LOCAL_IP:-<tidak terdeteksi>}"
     echo "  IP Publik : ${PUBLIC_IP:-<tidak terdeteksi>}"
     echo ""
-    echo "  Akses lokal: http://localhost:3000"
+
+    # Tampilkan port server kalau jalan
+    local SERVER_PID=$(get_service_pid "server.js")
+    local SERVER_PORT="?"
+    if [ -n "$SERVER_PID" ]; then
+        SERVER_PORT=$(grep -oP 'localhost:\K[0-9]+' $AMPREM_TMP/amprem.log 2>/dev/null | head -1) || SERVER_PORT="?"
+    fi
+    local DISPLAY_PORT="${SERVER_PORT:-3000}"
+
+    echo "  Akses lokal: http://localhost:${DISPLAY_PORT}"
     if [ -n "$LOCAL_IP" ]; then
-        echo "  Akses WiFi: http://${LOCAL_IP}:3000"
+        echo "  Akses WiFi: http://${LOCAL_IP}:${DISPLAY_PORT}"
+    fi
+
+    # IPv4 Public info
+    if [ -n "$PUBLIC_IP" ]; then
+        echo ""
+        echo -e "  ${YELLOW}--- Akses via IPv4 Public (butuh Port Forwarding) ---${NC}"
+        echo "  Port forwarding di router: arahkan port ${DISPLAY_PORT} ke IP HP kamu (${LOCAL_IP:-?})"
+        echo -e "  Setelah di-forward: ${GREEN}http://${PUBLIC_IP}:${DISPLAY_PORT}${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Catatan:${NC} Kalau HP di belakang CG-NAT/ NAT carrier, port forwarding"
+        echo "  TIDAK AKAN WORK. Pakai tunnel (Ngrok/Cloudflare/Serveo)."
     fi
 }
 
@@ -829,6 +868,7 @@ deploy_localhost() {
     info "Mode: Localhost (HP ini saja)"
     start_server 8080
     local LOCAL_IP=$(get_local_ip)
+    local PUBLIC_IP=$(get_public_ip)
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
     echo ""
@@ -836,6 +876,15 @@ deploy_localhost() {
     echo "    http://localhost:8080"
     echo "    http://${LOCAL_IP:-localhost}:8080"
     echo ""
+    if [ -n "$PUBLIC_IP" ]; then
+        echo -e "  ${YELLOW}--- Akses via IPv4 Public ---${NC}"
+        echo "  Port forwarding di router: port 8080 ke IP ${LOCAL_IP:-HP}"
+        echo -e "  Setelah di-forward: ${GREEN}http://${PUBLIC_IP}:8080${NC}"
+        echo ""
+        echo -e "  ${RED}Catatan:${NC} Kalau HP di belakang CG-NAT, ini TIDAK akan work."
+        echo "  Pakai tunnel (Ngrok/Cloudflare) kalau CG-NAT."
+        echo ""
+    fi
     echo "  Log: cat $AMPREM_TMP/amprem.log"
     echo "  Stop: pkill -f 'node server'"
 }
@@ -848,6 +897,7 @@ deploy_wifi() {
     info "Mode: WiFi Lokal (HP/laptop lain di WiFi sama)"
     start_server 8080
     local LOCAL_IP=$(get_local_ip)
+    local PUBLIC_IP=$(get_public_ip)
     sep
     echo -e "${GREEN}  BERHASIL JALAN!${NC}"
     echo ""
@@ -864,6 +914,13 @@ deploy_wifi() {
         echo "  Lalu akses: http://IP_HP:8080"
     fi
     echo ""
+    if [ -n "$PUBLIC_IP" ]; then
+        echo -e "  ${YELLOW}--- Akses via IPv4 Public (butuh port forwarding) ---${NC}"
+        echo "  Port forwarding: arahkan port 8080 ke IP ${LOCAL_IP:-HP kamu}"
+        echo -e "  Setelah di-forward: ${GREEN}http://${PUBLIC_IP}:8080${NC}"
+        echo -e "  ${RED}CG-NAT? Port forwarding gak akan work - pakai tunnel.${NC}"
+        echo ""
+    fi
     echo "  Stop: pkill -f 'node server'"
 }
 
