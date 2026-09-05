@@ -156,17 +156,35 @@ stop_all() {
 #  START SERVER
 # ============================================================
 start_server() {
-    stop_all
-    sleep 1
-
-    cd "$SCRIPT_DIR"
-
-    # Ensure log dir exists
     mkdir -p /tmp
 
     local PORT=${1:-3000}
 
-    # Cari path node secara eksplisit
+    # Cek apakah server sudah jalan di port tersebut
+    if pgrep -f "server.js" > /dev/null 2>&1; then
+        local EXISTING_PID=$(pgrep -f "server.js" | head -1)
+        echo ""
+        echo -e "  ${YELLOW}Node.js server sudah jalan (PID: ${EXISTING_PID}, Port: ${PORT})${NC}"
+        read -rp "  Restart server? [Y/n]: " DO_RESTART
+        if [[ "$DO_RESTART" =~ ^[Nn]$ ]]; then
+            echo "  Server dibiarkan jalan."
+            return 0
+        fi
+        pkill -f "server.js" 2>/dev/null
+        sleep 1
+    fi
+
+    # Cek port bebas
+    if command -v ss &>/dev/null; then
+        if ss -ltn 2>/dev/null | grep -q ":${PORT} "; then
+            warn "Port $PORT sudah dipakai service lain. Gunakan port berbeda: PORT=8080 node server.js"
+            return 1
+        fi
+    fi
+
+    cd "$SCRIPT_DIR"
+
+    # Cari path node
     local NODE_BIN
     if $IS_TERMUX; then
         NODE_BIN="$PREFIX/bin/node"
@@ -175,18 +193,16 @@ start_server() {
     fi
 
     if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
-        warn "Node.js tidak ditemukan di PATH. Jalankan 'I' di menu untuk install."
+        warn "Node.js tidak ditemukan. Install dulu: bash setup.sh -> I"
         return 1
     fi
 
-    # Jalankan server dengan nohup + explicit path + stderr capture
+    # Jalankan server
     cd "$SCRIPT_DIR"
     PORT=$PORT HOME=$HOME PATH="$PREFIX/bin:$PATH" nohup "$NODE_BIN" server.js > /tmp/amprem.log 2>&1 &
-
     local SERVER_PID=$!
     sleep 3
 
-    # Cek apakah process masih hidup
     if kill -0 $SERVER_PID 2>/dev/null; then
         ok "Server jalan (PID: $SERVER_PID) di port $PORT"
     else
