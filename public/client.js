@@ -68,12 +68,15 @@ function saveHistory(item) {
 // Riwayat tetap disimpan lokal untuk tampilan cepat, lalu disalin ke metadata
 // akun Supabase agar admin dapat melihatnya dari dashboard admin terpisah.
 async function syncHistoryToAccount() {
-  try {
-    await fetch('/api/history/sync', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history: getHistory() })
-    })
-  } catch {}
+  const response = await fetch('/api/history/sync', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ history: getHistory() })
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(data.message || 'Riwayat gagal disinkronkan.')
+  return data
 }
 
 async function pasteFromClipboard(inputEl) {
@@ -179,5 +182,5 @@ async function mountAccountMenu() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountAccountMenu)
 else mountAccountMenu()
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncHistoryToAccount)
-else syncHistoryToAccount()
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { syncHistoryToAccount().catch(() => {}) })
+else syncHistoryToAccount().catch(() => {})
