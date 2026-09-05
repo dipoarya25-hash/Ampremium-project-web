@@ -31,20 +31,24 @@ function mountBottomNav() {
   nav.innerHTML = links.map(function (link) {
     return '<a class="bottom-nav-link ' + (current === link[0] ? 'active' : '') + '" href="' + link[1] + '"><span class="bottom-nav-icon" aria-hidden="true">' + link[2] + '</span><span>' + link[3] + '</span></a>'
   }).join('')
-  // Saat user baru saja pindah dari Dashboard ke Inbox/Riwayat, kembali
-  // dengan History API agar browser memulihkan halaman sebelumnya (termasuk
-  // posisi scroll dan data formulir), bukan memuat index.html dari awal.
+  // Simpan asal navigasi agar Dashboard bisa dipulihkan dari history browser
+  // (termasuk posisi scroll dan data formulir), bukan dimuat dari awal.
+  const inboxOrHistoryLinks = nav.querySelectorAll('a[href="inbox.html"], a[href="history.html"]')
+  if (current === 'dashboard') {
+    inboxOrHistoryLinks.forEach(function (link) {
+      link.addEventListener('click', function () {
+        sessionStorage.setItem('amprem-return-to-dashboard', 'true')
+      })
+    })
+  }
+
   const dashboardLink = nav.querySelector('a[href="index.html"]')
   if (dashboardLink && current !== 'dashboard') {
     dashboardLink.addEventListener('click', function (event) {
-      try {
-        const previous = new URL(document.referrer)
-        const previousPage = previous.pathname.split('/').pop() || 'index.html'
-        if (previous.origin === location.origin && previousPage === 'index.html') {
-          event.preventDefault()
-          history.back()
-        }
-      } catch {}
+      if (sessionStorage.getItem('amprem-return-to-dashboard') !== 'true') return
+      event.preventDefault()
+      sessionStorage.removeItem('amprem-return-to-dashboard')
+      history.back()
     })
   }
   document.body.appendChild(nav)
